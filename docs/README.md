@@ -93,8 +93,8 @@ cd client && npx expo start
 - [x] Data model design
 - [x] UI/UX screen design
 - [x] Supabase schema
-- [ ] Auth + profile auto-creation
-- [ ] Food library CRUD
+- [x] Auth + profile auto-creation
+- [x] Food library CRUD
 - [ ] Food logging
 - [ ] Daily macro totals
 - [ ] Body metrics logging
