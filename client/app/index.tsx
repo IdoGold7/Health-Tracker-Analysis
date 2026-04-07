@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { View, TextInput, Button, Text, ScrollView } from 'react-native';
+import { router } from 'expo-router';
 import { supabase } from '../lib/supabase';
 import { Session } from '@supabase/supabase-js';
 
@@ -53,7 +54,8 @@ export default function Index() {
         />
         <Button title="Sign In" onPress={signIn} />
         {error && <Text style={{ color: 'red' }}>{error}</Text>}
-        {session && <Text selectable>{JSON.stringify(session, null, 2)}</Text>}
+        {session && <Button title="Go to Library" onPress={() => router.push('/library')} />}
+        {session && <Button title="Sign Out" onPress={() => supabase.auth.signOut()} />}
       </View>
     </ScrollView>
   );
