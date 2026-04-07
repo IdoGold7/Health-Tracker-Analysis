@@ -142,3 +142,6 @@ vite.config.ts.timestamp-*
 # Expo
 .expo/
 web-build/
+
+# claude
+.claude/
