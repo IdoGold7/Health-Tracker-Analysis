@@ -154,8 +154,8 @@ If any one of these is missing, the table is not complete.
 
 ## Status
 - [x] profiles
-- [ ] public_foods
-- [ ] user_foods
+- [x] public_foods
+- [x] user_foods
 - [ ] food_logs
 - [ ] body_metrics
 
