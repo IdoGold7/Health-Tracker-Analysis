@@ -47,10 +47,9 @@ The app is the collection layer. The analysis is the point.
 | Layer | Technology |
 |---|---|
 | Mobile app | React Native (Expo) |
-| API | Node.js / Express |
 | Database | Supabase (PostgreSQL, Auth, Row-Level Security) |
-| Analysis | DuckDB, SQL, Python |
-| Phase 2 | Galaxy Watch / Apple Watch via Health Connect / HealthKit |
+| Analysis | DuckDB, SQL, Python *(planned)* |
+| Phase 2 | Galaxy Watch / Apple Watch *(planned)* |
 
 ---
 
@@ -61,7 +60,7 @@ You'll need your own [Supabase](https://supabase.com) project.
 **1. Clone and install**
 ```bash
 git clone https://github.com/IdoGold7/Health-Tracker-Analysis.git
-cd Health-Tracker-Analysis
+cd Health-Tracker-Analysis/client
 npm install
 cp .env.example .env   # fill in your Supabase URL and anon key
 ```
@@ -71,19 +70,9 @@ cp .env.example .env   # fill in your Supabase URL and anon key
 npx supabase db push
 ```
 
-**3. Seed public food data** *(public instance only)*
+**3. Start the app**
 ```bash
-node server/scripts/seed-public-foods.js
-# Idempotent — safe to re-run. Personal instance: skip this step.
-```
-
-**4. Start the servers**
-```bash
-# Terminal 1 — Express server
-cd server && npm run dev
-
-# Terminal 2 — Expo client
-cd client && npx expo start
+npx expo start
 ```
 
 ---
@@ -91,7 +80,7 @@ cd client && npx expo start
 ## Roadmap
 
 - [x] Data model design
-- [x] UI/UX screen design
+- [ ] UI/UX screen design
 - [x] Supabase schema
 - [x] Auth + profile auto-creation
 - [x] Food library CRUD
