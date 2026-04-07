@@ -29,6 +29,10 @@ The app is the collection layer. The analysis is the point.
 
 - **No stored aggregates.** Daily macro totals are computed on read from raw
   log entries. The log is the source of truth.
+- **Timestamp-only logging, no meal structure.** Food entries carry a timestamp
+  and nothing else. No breakfast, lunch, or dinner categories — just a raw
+  stream of events across the day. This keeps the dataset unstructured and
+  unbiased, letting the analysis layer define any groupings.
 - **Append-only body metrics.** No UPDATE or DELETE — every check-in is
   permanent history. This is what enables trend analysis.
 - **Per-100g base unit.** All food macros stored per 100g. Clean, consistent,
@@ -88,7 +92,8 @@ cd client && npx expo start
 
 - [x] Data model design
 - [x] UI/UX screen design
-- [ ] Supabase schema + auth
+- [x] Supabase schema
+- [ ] Auth + profile auto-creation
 - [ ] Food library CRUD
 - [ ] Food logging
 - [ ] Daily macro totals
