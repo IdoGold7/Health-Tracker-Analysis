@@ -156,8 +156,8 @@ If any one of these is missing, the table is not complete.
 - [x] profiles
 - [x] public_foods
 - [x] user_foods
-- [ ] food_logs
-- [ ] body_metrics
+- [x] food_logs
+- [x] body_metrics
 
 ## Flagged
 Nothing yet.
