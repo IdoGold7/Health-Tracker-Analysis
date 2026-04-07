@@ -23,7 +23,7 @@ One row per user. Extends `auth.users`.
 
 | Column | Type | Nullable | Default | Notes |
 |---|---|---|---|---|
-| `id` | `uuid` | No | — | PK, FK → `auth.users(id)` |
+| `id` | `uuid` | No | — | PK, FK → `auth.users(id)` ON DELETE CASCADE |
 | `target_kcal` | `integer` | Yes | `null` | Daily calorie target. Check: `>= 0` |
 | `target_protein_g` | `integer` | Yes | `null` | Daily protein target (g). Check: `>= 0` |
 | `target_carbs_g` | `integer` | Yes | `null` | Daily carbs target (g). Check: `>= 0` |
@@ -34,7 +34,7 @@ One row per user. Extends `auth.users`.
 
 ```sql
 create table profiles (
-  id uuid primary key references auth.users(id),
+  id uuid primary key references auth.users(id) on delete cascade,
   target_kcal integer check (target_kcal >= 0),
   target_protein_g integer check (target_protein_g >= 0),
   target_carbs_g integer check (target_carbs_g >= 0),
@@ -56,6 +56,20 @@ $$ language plpgsql;
 create trigger profiles_updated_at
 before update on profiles
 for each row execute function update_updated_at();
+
+-- auto-create a profiles row when a new user signs up
+create or replace function handle_new_user()
+returns trigger as $$
+begin
+  insert into public.profiles (id)
+  values (new.id);
+  return new;
+end;
+$$ language plpgsql security definer;
+
+create trigger on_auth_user_created
+after insert on auth.users
+for each row execute function handle_new_user();
 ```
 
 **Decisions:**
@@ -63,6 +77,8 @@ for each row execute function update_updated_at();
 - No weight here — it is time-series data and lives in `body_metrics`.
 - `height_m` lives here because it is effectively stable for an adult and needed for BMI derivation at query time.
 - Integer for all targets — no decimal macro targets needed for MVP.
+- `ON DELETE CASCADE` on the FK to `auth.users` — deleting a user removes their profile. Without this, auth user deletion is blocked or leaves an orphaned row.
+- Profile row is created automatically via `on_auth_user_created` trigger on `auth.users`. The app never inserts into `profiles` directly on signup.
 - RLS: user can only read and write their own row.
 
 ---

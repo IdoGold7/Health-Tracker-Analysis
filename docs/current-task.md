@@ -1,163 +1,85 @@
 # Current Task
 
 ## Objective
-Build the Supabase database schema for this project.
-Deliver all required tables with:
-- constraints
-- indexes
-- RLS policies
-- required triggers
+Add a Postgres trigger that automatically creates a `profiles` row
+when a new user signs up via Supabase Auth.
+
+Without this, `profiles` has no row for new users and any screen
+that reads targets or height will fail silently.
 
 ## In Scope
-- profiles
-- public_foods
-- user_foods
-- food_logs
-- body_metrics
+- Trigger function on `auth.users` that inserts into `profiles` on new user creation
+- Migration file in `supabase/migrations/`
+- Verification that a new signup produces a `profiles` row
 
-## Required Table Order
-1. profiles
-2. public_foods
-3. user_foods
-4. food_logs
-5. body_metrics
+## Out of Scope
+- Any app-side auth flow (login screen, session handling)
+- Any changes to existing tables or RLS policies
 
-Do not change the order.
+## Required Names
+- Trigger function: `handle_new_user`
+- Trigger: `on_auth_user_created`
 
-## Dependency Notes
-- profiles depends on auth.users only
-- public_foods has no table dependencies
-- user_foods depends on public_foods and auth.users
-- food_logs depends on user_foods and public_foods
-- body_metrics depends on auth.users only
+Do not deviate from these names.
 
 ---
 
-## Execution Rules
-
-Work on one table only.
-
-For the current table only, Claude must produce:
-1. the SQL migration
-2. a short verification checklist
-3. the exact commit message
-
-After that, Claude must stop.
-
-Claude must not:
-- generate SQL for the next table
-- discuss the next table in detail
-- batch multiple tables into one migration
-- mark a table complete without explicit confirmation that execution, verification, and commit are finished
+## Migration File
+Save as:
+`supabase/migrations/YYYYMMDDHHMMSS_create_profile_on_signup.sql`
 
 ---
 
-## Required Workflow For Each Table
+## Required Workflow
 
 ### Step 1 — Generate migration
-Claude writes the SQL for one table only.
-Save the SQL as a migration file under:
-`supabase/migrations/`
-Filename format:
-`YYYYMMDDHHMMSS_create_<table_name>.sql`
-No combined migration files. One table per migration.
+Write the trigger function and trigger.
+One migration file. Nothing else.
 
 ### Step 2 — Execute migration
-Run the migration in the Supabase SQL editor.
-If execution fails:
-- stop immediately
-- inspect the failure
-- drop any partially created objects for that table before retrying
-- do not re-run the migration on top of a partial state
+Run in Supabase SQL Editor.
+If it fails: drop partial objects, fix, retry clean.
 
-A failed attempt must be cleaned up before the next attempt.
-
-### Step 3 — Verify database objects
-Confirm all required objects exist for the current table:
-- table
-- primary key
-- foreign keys
-- unique constraints
-- check constraints
-- indexes
-- RLS enablement
-- RLS policies
-- triggers
-
-Do not assume correctness because the migration executed successfully.
+### Step 3 — Verify objects exist
+Confirm in Supabase:
+- trigger function exists
+- trigger is attached to `auth.users`
 
 ### Step 4 — Verify behavior
-Test actual behavior for the current table.
-Required checks:
-- valid inserts are accepted
-- invalid inserts are rejected
-- constraints behave as defined
-- triggers fire as intended
-- RLS behaves as intended
+Create a test user via Supabase Auth dashboard only (Authentication → Users → Add user).
+Do not use SQL insertion into `auth.users` — it bypasses the Auth layer and does not
+test the trigger in the correct context.
 
-### Step 5 — RLS validation
-RLS must be tested with two different authenticated users.
-Required proof:
-- user A can access permitted rows
-- user A cannot read user B's protected rows
-- user A cannot write user B's protected rows
-- user B is tested separately
+Confirm a `profiles` row was created for that user with:
+- correct `id` (matches `auth.users`)
+- `created_at` and `updated_at` set
+- all target columns null (expected — no targets set yet)
 
-Testing as only one authenticated user is not sufficient.
-A table with user-scoped access is not verified until cross-user isolation is proven.
+### Step 4b — Cleanup
+Delete the test user from Supabase Auth dashboard (Authentication → Users).
+Confirm the `profiles` row is also gone (cascade delete is set on the FK).
+If the `profiles` row is orphaned — stop, that's a bug, do not proceed to commit.
 
-### Step 6 — Fix loop
-If any execution or verification step fails:
-- return to Claude for a fix for the same table only
-- do not proceed to the next table
-- do not commit
-
-### Step 7 — Commit
-Commit only after the current table:
-- executed successfully
-- was fully verified
-- passed RLS testing where applicable
-
-Commit both:
-- the migration file
-- any related required changes for that table
-
-Commit message format:
-`feat: add <table_name> table with RLS and constraints`
-
-Do not amend old migrations that were already committed. New fixes must be made in a new migration unless explicitly instructed otherwise.
-
-### Step 8 — Stop gate
-After commit, stop and wait.
-Claude may proceed only after receiving explicit confirmation that the current table was:
-- executed successfully
-- verified successfully
-- committed successfully
+### Step 5 — Stop gate
+Stop after verification and report results. Do not commit or push.
 
 ---
 
 ## Completion Standard
-A table is complete only when all of the following are true:
-1. migration file exists in the correct path with the correct naming format
-2. migration executed cleanly
-3. partial-state cleanup was done if any prior run failed
-4. constraints were verified by behavior, not assumption
-5. indexes were confirmed
-6. RLS was enabled and policies were confirmed
-7. triggers were confirmed
-8. cross-user RLS testing passed where applicable
-9. commit was created with the required message
+Done only when:
+1. Migration file exists with correct naming
+2. Migration executed cleanly
+3. Trigger confirmed to exist on `auth.users`
+4. New user signup produces a valid `profiles` row
+5. Test user deleted and `profiles` row confirmed gone
 
-If any one of these is missing, the table is not complete.
+## Non-Negotiables
+- Never commit or push. Write the migration, verify it, then stop and wait.
 
 ---
 
 ## Status
-- [x] profiles
-- [x] public_foods
-- [x] user_foods
-- [x] food_logs
-- [x] body_metrics
+- [ ] profile auto-creation trigger
 
 ## Flagged
 Nothing yet.
