@@ -84,7 +84,7 @@ npx expo start
 - [x] Supabase schema
 - [x] Auth + profile auto-creation
 - [x] Food library CRUD
-- [ ] Food logging
+- [x] Food logging
 - [ ] Daily macro totals
 - [ ] Body metrics logging
 - [ ] Scan label (Claude API)
