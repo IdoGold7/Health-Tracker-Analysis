@@ -55,6 +55,7 @@ export default function Index() {
         <Button title="Sign In" onPress={signIn} />
         {error && <Text style={{ color: 'red' }}>{error}</Text>}
         {session && <Button title="Go to Library" onPress={() => router.push('/library')} />}
+        {session && <Button title="Log Food" onPress={() => router.push('/log-food')} />}
         {session && <Button title="Sign Out" onPress={() => supabase.auth.signOut()} />}
       </View>
     </ScrollView>

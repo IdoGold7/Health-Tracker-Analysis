@@ -2,7 +2,7 @@
 
 Personal Health Data Platform. Food logging, macro tracking, body metrics. Portfolio project.
 
-**Stack:** React Native (Expo) · Node.js/Express · Supabase (PostgreSQL + Auth + RLS)
+**Stack:** React Native (Expo) · Supabase (PostgreSQL + Auth + RLS)
 
 ---
 
@@ -31,8 +31,9 @@ Personal Health Data Platform. Food logging, macro tracking, body metrics. Portf
 ## Non-Negotiables
 
 - Direct Supabase CRUD from the client for user-owned data
-- Express only for secrets, third-party APIs, or nontrivial server-side logic
 - RLS is the security boundary — never bypass it
 - One task at a time. Write → test → move on. No refactoring mid-task.
 - Do not read files outside the current task scope
 - Never commit or push without explicit approval. Write the code, test it, then stop and wait. Do not run `git commit` or `git push` unless told to.
+- Do not duplicate logic. If the same operation exists elsewhere in the codebase, extract it into a shared function and call it from both places. If extraction isn't clean, flag it — do not copy-paste and move on.
+- At each checkpoint: paste the relevant code, show actual output (console log, Supabase query result, or CLI output). State expected vs actual result. Explicitly state which checkpoint this is. Do not self-report "it works" — show evidence. If a checkpoint requires visual confirmation on a device, state what the developer should verify and wait for confirmation. Wait for explicit approval before continuing.
