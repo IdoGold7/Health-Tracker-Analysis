@@ -97,14 +97,6 @@ export default function Index() {
     try {
       const data = await fetchDailyLogs(selectedDate);
       setEntries(data);
-      console.log(`Daily logs for ${selectedDate}:`, data.map((e) => ({
-        name: e.food_name,
-        grams: e.grams,
-        kcal: Math.round(e.kcal),
-        protein_g: Math.round(e.protein_g * 10) / 10,
-        carbs_g: Math.round(e.carbs_g * 10) / 10,
-        fat_g: Math.round(e.fat_g * 10) / 10,
-      })));
     } catch (err: any) {
       console.error('Failed to fetch daily logs:', err);
       setLogError(err.message ?? 'Failed to load logs.');
