@@ -1,130 +1,149 @@
-# Current Task: Daily Macro Totals by Selected Day
+# Current Task
 
 ## Objective
-Display computed macro intake for a selected day on the home screen. Default to today. User can open a date picker and select any past date up to today.
+Add a log detail screen where the user can view, edit, or delete an existing
+food log entry. Tapping a log entry on the home screen navigates to the
+detail screen.
 
 ## Docs to Read
-- `data-model.md` — `food_logs` schema, macro query pattern, FK resolution
-
-## Target File
-- `client/app/index.tsx` — existing content (Log Food nav button) stays, new display added alongside it
-- Helper logic may live in `client/lib/` only if extraction is clearly needed
-- No backend routes, no RPC, no new DB views
-
-## Critical Schema Context
-`food_logs` has two nullable FK columns: `user_food_id` and `public_food_id`. Exactly one is set per row (CHECK constraint). Resolve name and per-100g macros using the client query pattern in `data-model.md`. Fetch the linked food record(s) for each `food_logs` row, then normalize each row into a single `DailyLogEntry` using the non-null relation.
+- `docs/data-model.md` — `food_logs` schema, editable columns, delete behavior
+- `docs/architecture.md` — RLS policy matrix (UPDATE + DELETE on `food_logs`)
 
 ## In Scope
 
-**Query:**
-- Query `food_logs` for the selected day, joining `user_foods` and `public_foods` to resolve food name and per-100g macros
-- Compute per entry:
-  - `kcal = grams × kcal_per_100g / 100`
-  - `protein_g = grams × protein_per_100g / 100`
-  - `carbs_g = grams × carbs_per_100g / 100`
-  - `fat_g = grams × fat_per_100g / 100`
-- Sum totals across all entries for the selected day
-- Direct Supabase query from client — no Express
+### Navigation
+- Each log entry on the home screen (`app/index.tsx`) becomes tappable
+- Tapping navigates to a new detail screen: `app/log/[id].tsx`
+- The log entry ID is passed as a route parameter
 
-**Selected day state:**
-- Store as a local date-only value (`YYYY-MM-DD`), not as an ISO datetime
-- Derive `start` and `end` timestamps from that value in device local time
-- `start` = local midnight at start of selected day
-- `end` = local midnight at start of next day
-- Filter: `logged_at >= start AND logged_at < end`
+### Detail Screen — Read-Only View (default state)
+- Fetches the full log entry by ID, joined to `user_foods` / `public_foods`
+  for food name and per-100g macros
+- Displays: food name, grams, logged_at (formatted), computed kcal,
+  protein, carbs, fat
+- All fields read-only by default
+- Two actions visible: "Edit" button and "Delete" button
+- If the query returns no data (not found, RLS blocked, invalid route
+  param, network error): show a simple error message and a back button.
+  Do not render edit/delete controls against an empty state.
 
-**Required result shape:**
+### Edit Mode
+- User taps "Edit" → grams and logged_at become editable inputs,
+  all other fields stay read-only
+- Grams input: pre-filled with current value
+- Logged_at input: pre-filled with current value, user can change it
+  (same manual override pattern as log-food)
+- Food name: displayed as read-only label — never editable
+- "Save" button replaces "Edit" button. "Cancel" returns to read-only
+  view without saving.
 
-```ts
-type DailyLogEntry = {
-  id: string
-  logged_at: string
-  food_name: string
-  grams: number
-  kcal: number
-  protein_g: number
-  carbs_g: number
-  fat_g: number
-}
-```
+### Save (Update)
+- Supabase client UPDATE on the row by `id`
+- Updates `grams` and `logged_at` only
+- Same constraints apply:
+  - `grams > 0` — validate client-side before sending
+  - `logged_at <= now() + 5 minutes` — DB enforces, surface error if it fires
+- On success: call `router.back()` to return to home screen. Home screen
+  refetches on focus, so totals and list update automatically.
+- On failure: stay on detail screen, show error, re-enable Save button
+- While save request is in flight: disable Save and Delete buttons to
+  prevent duplicate submissions. Re-enable on failure.
 
-Normalize fetched rows into `DailyLogEntry[]` before totals calculation and rendering. Sort by `logged_at` desc.
+### Delete
+- User taps "Delete" → confirmation prompt ("Delete this entry?")
+- On confirm: Supabase client DELETE on the row by `id`
+- While delete request is in flight: disable Save and Delete buttons to
+  prevent duplicate submissions
+- On success: call `router.back()` to return to home screen
+- On cancel: dismiss prompt, stay on detail screen
 
-**Display — in this order:**
-1. Date picker — defaults to today, `maxDate` = today (no future dates)
-2. Totals — kcal, protein, carbs, fat summed
-3. Entry list — each row: food name, grams, `logged_at` time, kcal, protein, carbs, fat
-
-**Rounding:**
-- kcal: nearest integer
-- protein / carbs / fat: 1 decimal place
-- Round for display only; calculations use raw values
-
-**Time display:**
-- `logged_at` in device local time, format `HH:mm` (24-hour)
-
-**States:**
-- Loading: show loading indicator while fetch is in progress
-- Error: show error text and log full error to console; totals reset to zero
-- Empty: totals show zeroes, list shows "Nothing logged for this day."
-- Day switch: do not show previous day's data under the new date label
-
-**Refresh triggers:**
-- Screen first mounts
-- Selected date changes
-- Screen regains focus after returning from another screen
-- Focus refetch preserves current selected date — do not reset to today
+### Direct Supabase client operations — no Express
 
 ## Out of Scope
-- Targets, progress bars, goal setting
-- Settings screen
-- Editing or deleting log entries from this screen
-- Styling / visual design polish
-- Backend routes / Express
+- Changing the food source (`user_food_id` / `public_food_id`) on an existing
+  log. Documented scope cut: if the user logged the wrong food, they delete
+  the entry and re-log through the existing log-food screen. Future path:
+  extract food search into a shared `<FoodPicker />` component, then reuse
+  it in the edit flow.
+- Batch edit or batch delete
+- Undo / soft delete
+- Any changes to `log-food.tsx`
+- Styling polish
+
+## Scope Cut Note (for docs/README)
+Food source is not editable on an existing log entry. This is a deliberate
+MVP scope cut — not a technical limitation. The food search and source-tagging
+logic in `log-food.tsx` would be extracted into a shared component
+(`components/FoodPicker.tsx`) and reused in the edit flow. Delete + re-log
+is the workaround until then.
 
 ---
 
 ## Build Order and Checkpoints
 
-### Checkpoint 1 — Query
-Build the macro query for a given day. Show:
-- Raw query result logged to console with: name, grams, kcal, protein, carbs, fat
-- Manual verification of one entry:
-  - Note grams and per-100g values from the source food record
-  - Calculate: `grams × per_100g / 100`
-  - Compare to console output
+### Checkpoint 1 — Query Extraction + Navigation + Detail Screen (Read-Only)
 
-### Checkpoint 2 — Display
-Render date picker, totals, and entry list on home screen. Developer verifies on device:
-- Totals equal sum of individual entries
-- Food names and grams correct
-- Each entry shows time in `HH:mm`
-- Ordering is newest first
+**Query extraction (do first):**
+- Extract the food_logs select+join query from `app/index.tsx` into a
+  shared function in `client/lib/queries.ts`
+- The function returns `supabase.from('food_logs').select(...)` with
+  joins and column aliases only. No filters, no sorting, no `.single()`,
+  no `await`, no response mapping. Callers chain their own filters onto the return
+  value (.gte/.lt for date range, .eq/.single for one entry).
+- Replace the inline query in `app/index.tsx` with a call to the shared
+  function. Verify home screen still works — same data, same behavior.
+- **Boundary: do not change anything else in `index.tsx`.** No renaming,
+  no restructuring, no touching rendering logic. Swap the query, confirm
+  it works, stop.
+- **Wait for developer confirmation that the home screen still works before building the detail screen.**
 
-### Checkpoint 3 — Date Picker
-- Select a past date, confirm entries load for that day
-- Select today, confirm return
-- Future dates not selectable
-- Boundary check: entry at 23:59 appears on that day, entry at 00:00 appears on next day
+**Then build the detail screen:**
+- Make log entries tappable on the home screen
+- Tapping navigates to `app/log/[id].tsx`
+- Detail screen uses the same shared query function with `.eq('id', id).single()`
+- Displays: food name, grams, logged_at, computed macros
+- Data matches what the home screen showed for that entry
 
-### Checkpoint 4 — Edge Cases
-- Day with no logs: zero totals + "Nothing logged for this day."
-- Switching between days with and without data works correctly
-- Screen opens defaulting to today
-- Log a new entry via log-food, return to home — data refreshes
-- If selected day is not today, returning from log-food preserves the selected day
+Show:
+- The shared query function in `client/lib/queries.ts`
+- Home screen still renders correctly after the swap (developer verifies)
+- Detail screen renders correct data for a tapped entry (developer verifies)
+
+### Checkpoint 2 — Edit Mode + Save
+Build the edit toggle and save action. Show:
+- Tapping "Edit" switches grams and logged_at to editable inputs,
+  food name stays read-only
+- "Cancel" returns to read-only view without firing any update
+- After saving edited grams: row in Supabase reflects new value,
+  returning to home shows updated totals
+- After saving edited logged_at: row in Supabase reflects new timestamp
+- Rejection of zero or negative grams (show the guard or error)
+- A future timestamp beyond 5 minutes surfacing an error from the DB
+- On successful save: navigates back to home
+
+### Checkpoint 3 — Delete
+Wire up the delete action. Show:
+- Confirmation prompt appears before delete
+- After confirming: row is removed from Supabase, navigates back to home,
+  entry gone from list, totals updated
+- Cancelling the prompt does nothing — stays on detail screen
+
+### Checkpoint 4 — RLS
+**Manual test — developer performs this, not Claude Code.**
+Sign in as a second user and test against `food_logs`:
+- SELECT: user B navigates directly to `/log/{user-A-entry-id}` —
+  detail screen should show error/not-found, not user A's data
+- UPDATE: user B cannot modify user A's rows
+- DELETE: user B cannot delete user A's rows
+
+Claude Code: state that this checkpoint requires manual testing by the
+developer and wait for confirmation that it passed.
 
 ---
 
 ## Completed
 
-All 4 checkpoints passed.
-
-- Checkpoint 1 — Query: dual-FK embedded select with hint disambiguation, local day bounds, macro computation
-- Checkpoint 2 — Display: totals summary, entry list with HH:mm time, rounding, empty/loading/error states
-- Checkpoint 3 — Date Picker: @react-native-community/datetimepicker, maxDate=today, triggers refetch on change
-- Checkpoint 4 — Edge Cases: empty day zeroes, day switching, default today, focus refetch, selected day preserved
-
-### Files changed
-- `client/app/index.tsx` — daily macro query, totals display, entry list, date picker
-- `client/package.json` — added @react-native-community/datetimepicker
+- **Checkpoint 1** — Query extraction (`client/lib/queries.ts`), navigation (tappable log entries), detail screen read-only view (`client/app/log/[id].tsx`)
+- **Checkpoint 2** — Edit mode toggle, save with client-side and DB-enforced validation
+- **Checkpoint 3** — Delete with confirmation prompt
+- **Checkpoint 4** — RLS manually verified: SELECT, UPDATE, DELETE all blocked for non-owner

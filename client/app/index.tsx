@@ -3,6 +3,7 @@ import { View, TextInput, Button, Text, ScrollView, ActivityIndicator, Platform,
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { router, useFocusEffect } from 'expo-router';
 import { supabase } from '../lib/supabase';
+import { foodLogsWithMacros } from '../lib/queries';
 import { Session } from '@supabase/supabase-js';
 
 // --- Types ---
@@ -35,13 +36,7 @@ function todayStr(): string {
 async function fetchDailyLogs(dateStr: string): Promise<DailyLogEntry[]> {
   const { start, end } = getLocalDayBounds(dateStr);
 
-  const { data, error } = await supabase
-    .from('food_logs')
-    .select(`
-      id, grams, logged_at,
-      user_foods!food_logs_user_food_id_fkey(name, kcal_per_100g, protein_per_100g, carbs_per_100g, fat_per_100g),
-      public_foods!food_logs_public_food_id_fkey(name, kcal_per_100g, protein_per_100g, carbs_per_100g, fat_per_100g)
-    `)
+  const { data, error } = await foodLogsWithMacros()
     .gte('logged_at', start)
     .lt('logged_at', end)
     .order('logged_at', { ascending: false });
@@ -203,7 +198,7 @@ export default function Index() {
                   <Text style={{ color: '#888' }}>Nothing logged for this day.</Text>
                 ) : (
                   entries.map((e) => (
-                    <View key={e.id} style={{ paddingVertical: 8, borderBottomWidth: 1, borderColor: '#eee' }}>
+                    <TouchableOpacity key={e.id} onPress={() => router.push(`/log/${e.id}`)} style={{ paddingVertical: 8, borderBottomWidth: 1, borderColor: '#eee' }}>
                       <Text style={{ fontWeight: 'bold' }}>
                         {e.food_name} — {e.grams}g
                         <Text style={{ fontWeight: 'normal', color: '#888' }}>
@@ -216,7 +211,7 @@ export default function Index() {
                         {' | '}C {Math.round(e.carbs_g * 10) / 10}g
                         {' | '}F {Math.round(e.fat_g * 10) / 10}g
                       </Text>
-                    </View>
+                    </TouchableOpacity>
                   ))
                 )}
               </>
