@@ -11,6 +11,7 @@ create table body_metrics (
   forearm_cm numeric(5,1) check (forearm_cm > 0),
   -- note: time-based CHECK works for MVP; migrate to trigger before production
   logged_at timestamptz not null check (logged_at <= now() + interval '5 minutes'),
+  updated_at timestamptz not null default now(),
   created_at timestamptz not null default now(),
   -- at least one metric must be present
   check (
@@ -18,6 +19,10 @@ create table body_metrics (
     neck_cm is not null or waist_cm is not null or forearm_cm is not null
   )
 );
+
+create trigger body_metrics_updated_at
+before update on body_metrics
+for each row execute function update_updated_at();
 
 create index on body_metrics (user_id, logged_at desc);
 
@@ -31,3 +36,11 @@ create policy "body_metrics: users can select own rows"
 create policy "body_metrics: users can insert own rows"
   on body_metrics for insert
   with check (auth.uid() = user_id);
+
+create policy "body_metrics: users can update own rows"
+  on body_metrics for update
+  using (auth.uid() = user_id);
+
+create policy "body_metrics: users can delete own rows"
+  on body_metrics for delete
+  using (auth.uid() = user_id);
