@@ -93,10 +93,9 @@ RLS is the primary security boundary. All tables have RLS enabled.
 | `public_foods` | All authenticated users | — | — | — |
 | `user_foods` | Own rows only | Own rows only | Own rows only | Own rows only |
 | `food_logs` | Own rows only | Own rows only | Own rows only | Own rows only |
-| `body_metrics` | Own rows only | Own rows only | — | — |
+| `body_metrics` | Own rows only | Own rows only | Own rows only | Own rows only |
 
 - `public_foods` is read-only for all users. Seeding uses the service role key at migration time only — never during normal app operation.
-- `body_metrics` has no UPDATE or DELETE policy — rows are permanent history by design.
 - Express routes that write to Supabase on behalf of a user pass the user's JWT, not the service role key. RLS still applies.
 
 ---

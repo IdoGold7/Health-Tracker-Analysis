@@ -300,7 +300,7 @@ where fl.user_id = auth.uid()
 
 ## `body_metrics`
 
-One row per check-in. Append-only time-series — old entries are never modified.
+One row per check-in. Editable — users can correct input errors.
 
 | Column | Type | Nullable | Default | Notes |
 |---|---|---|---|---|
@@ -312,6 +312,7 @@ One row per check-in. Append-only time-series — old entries are never modified
 | `waist_cm` | `numeric(5,1)` | Yes | `null` | Check: `> 0` |
 | `forearm_cm` | `numeric(5,1)` | Yes | `null` | Check: `> 0` |
 | `logged_at` | `timestamptz` | No | — | Client-owned. Check: `<= now() + 5 min` |
+| `updated_at` | `timestamptz` | No | `now()` | Auto-updated via trigger |
 | `created_at` | `timestamptz` | No | `now()` | Auto-set on insert |
 
 ```sql
@@ -325,6 +326,7 @@ create table body_metrics (
   forearm_cm numeric(5,1) check (forearm_cm > 0),
   -- note: time-based CHECK works for MVP; migrate to trigger before production
   logged_at timestamptz not null check (logged_at <= now() + interval '5 minutes'),
+  updated_at timestamptz not null default now(),
   created_at timestamptz not null default now(),
   -- at least one metric must be present — a row with only timestamps is junk data
   check (
@@ -333,7 +335,12 @@ create table body_metrics (
   )
 );
 
+create trigger body_metrics_updated_at
+before update on body_metrics
+for each row execute function update_updated_at();
+
 create index on body_metrics (user_id, logged_at desc);
+
 ```
 
 **BMI calculation** (at query time, never stored):
@@ -355,6 +362,6 @@ order by bm.logged_at;
 - BMI is not stored — it is derived from `weight_kg` and `height_m` (stored on `profiles`) at query time. Storing it would create two sources of truth.
 - `body_fat_pct` is entered manually — user reads it from a smart scale or measurement tool. Calculation from circumferences is a future feature and does not belong in the data model.
 - Circumferences (`neck_cm`, `waist_cm`, `forearm_cm`) are present but low priority — nullable, no pressure to fill. Forearm is intentional: included for personal tracking use cases beyond standard body fat formulas (e.g. monitoring muscle gain in a specific area). It does not map to the US Navy body fat estimation method, which uses neck and waist only.
-- Entries are immutable — each check-in is a new row. History is never overwritten. This is what enables trend charts. Immutability is the reason there is no `updated_at` column — rows are never modified after insert.
+- Entries are editable — users can correct input errors (wrong weight, wrong date). `updated_at` tracks modifications. This matches the `food_logs` pattern. Historical trend analysis uses `logged_at`, not `created_at` or `updated_at`.
 - `logged_at` is client-owned, same pattern as `food_logs`. No past limit, no future timestamps.
-- RLS: user can only read and insert their own rows.
+- RLS: user can read, insert, update, and delete their own rows.
