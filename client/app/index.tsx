@@ -148,6 +148,7 @@ export default function Index() {
         {error && <Text style={{ color: 'red' }}>{error}</Text>}
         {session && <Button title="Go to Library" onPress={() => router.push('/library')} />}
         {session && <Button title="Log Food" onPress={() => router.push('/log-food')} />}
+        {session && <Button title="Body Metrics" onPress={() => router.push('/body-metrics')} />}
         {session && <Button title="Sign Out" onPress={() => supabase.auth.signOut()} />}
 
         {/* Daily macro display */}
