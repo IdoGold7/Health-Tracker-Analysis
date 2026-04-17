@@ -33,8 +33,10 @@ The app is the collection layer. The analysis is the point.
   and nothing else. No breakfast, lunch, or dinner categories — just a raw
   stream of events across the day. This keeps the dataset unstructured and
   unbiased, letting the analysis layer define any groupings.
-- **Append-only body metrics.** No UPDATE or DELETE — every check-in is
-  permanent history. This is what enables trend analysis.
+- **Editable body metrics.** Check-ins can be corrected or deleted —
+  typos shouldn't become permanent history. Trend analysis uses
+  `logged_at`, not `created_at`, so corrections don't distort the
+  timeline.
 - **Per-100g base unit.** All food macros stored per 100g. Clean, consistent,
   no unit confusion in the data.
 - **Raw export.** Data exports as unaggregated logs. Aggregation happens
