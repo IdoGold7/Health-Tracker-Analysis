@@ -1,179 +1,177 @@
-# Current Task
+markdown# Current Task
 
 ## Objective
-Build the body metrics entry flow: a new screen to log check-ins and
-manage profile height, plus integrate the latest entry into the Home
-screen display.
+Add edit and delete for existing `body_metrics` entries via a new detail
+screen reached from the Home screen body metrics block.
 
 ## Docs to Read
-- `docs/data-model.md` — `body_metrics` and `profiles` sections (BMI query pattern)
+- `docs/data-model.md` — `body_metrics` section (editable fields, RLS)
 - `docs/architecture.md` — screen list, data flow
 
 ## Context
-The previous task rewrote the `body_metrics` migration to support UPDATE
-and DELETE. Table schema is now final. This task is the first UI build
-on top of it: entry screen + Home display. Edit/delete of existing
-entries is a later task, following the same pattern as food logs.
+Body metrics entries are currently insert-only from the app. Correcting
+a mistyped value creates a duplicate row; only the latest shows on Home
+(ordered by `logged_at desc, created_at desc`). Clean dataset is the
+project's primary goal, so the correction path must actually UPDATE or
+DELETE rows, not append over them.
 
-Height lives on `profiles.height_m`, not on `body_metrics`. It is needed
-for BMI. The entry screen exposes a height input that writes to
-`profiles` — no schema change.
+Database already supports this — the `body_metrics` migration added
+UPDATE and DELETE RLS policies in a prior task. This is UI-only work.
+
+Scope boundary: this task edits **one** entry at a time — the latest
+entry for the selected date on Home. Older same-date duplicates are
+reachable only via the Supabase dashboard until a body metrics history
+screen exists. Documented, intentional.
 
 ## In Scope
 
-### Checkpoint 1 — Body Metrics Entry Screen
-New route: `client/app/body-metrics.tsx`.
+### Checkpoint 1 — Shared Helpers Extraction
+Before writing the detail screen, extract shared logic from
+`client/app/body-metrics.tsx` into a new file
+`client/lib/body-metrics-helpers.ts`.
 
-Form fields:
-- `weight_kg` (optional)
-- `body_fat_pct` (optional)
-- `neck_cm`, `waist_cm`, `forearm_cm` (optional)
-- `height_m` (optional) — separate section; writes to `profiles`
-- Date picker — date only, no hour input visible
+Extract the following pure functions (no component state, no hooks):
+- `parsePositive(value: string): number | null`
+- `parseBodyFat(value: string): number | null`
+- `buildLoggedAt(selectedDate: string): string` — the "today → now(),
+  past date → local noon" construction
+- `todayStr(): string` — already exists, move it too
 
-**Validation (client-side, mirrors schema CHECK):**
-- `body_fat_pct` — must be `>= 0 and <= 100`
-- `weight_kg`, `neck_cm`, `waist_cm`, `forearm_cm`, `height_m` — must be `> 0`
-- Empty input strings (`""`) must be normalized to `null` before any
-  request. Do not send `""` to Supabase — NOT NULL and CHECK constraints
-  will fire with confusing errors.
-- Non-numeric parse failures block submit before any request is sent
-- Future dates are not selectable
-
-**Submit rules:**
-
-1. Determine intent based on form state:
-   - Body metric fields non-empty → `body_metrics` insert is intended
-   - Height changed vs current `profiles.height_m` (including clearing
-     to null) → `profiles` update is intended
-   - Neither → submit is disabled
-
-2. `logged_at` construction from selected date:
-   - Today → `now()`
-   - Past date → local noon of that date (avoids the 5-min future check)
-
-3. Write order and failure handling:
-   - If `body_metrics` insert is intended, run it first
-     - On failure: surface error, stop, do not touch `profiles`
-   - If `profiles` height update is intended, run it after (or alone, if
-     no body metric fields were filled)
-     - On failure after a successful `body_metrics` insert: show
-       "Check-in saved, height was not updated — please retry." Refetch
-       both resources so UI matches server truth. No silent partial success.
-     - On failure when no body_metrics insert ran: standard error, retry.
-
-4. Height-only submission is allowed. If all five body metric fields are
-   empty but `height_m` changed, skip the `body_metrics` insert and only
-   update `profiles.height_m`.
-
-5. Clearing the height field writes `null` to `profiles.height_m`. This
-   is intentional — BMI will then render as `-` across all dates until
-   height is re-entered.
-
-Nav:
-- Add "body metrics" link to Home alongside the existing 4 nav links
+The existing entry screen must import these from the new file after
+extraction. No behavior change on the entry screen — this is
+mechanical refactor only.
 
 **Developer verifies on device:**
-- Body-metric-only submit: inserts row, does not touch profile
-- Height-only submit: updates profile, inserts no body_metrics row
-- Combined submit: both writes succeed in order
-- Clearing height writes null; BMI on Home goes to `-` everywhere
-- Validation rejects: empty submit, zero/negative for `> 0` fields,
-  `body_fat_pct` outside 0–100, non-numeric input
-- Future date cannot be picked
-- Empty-string normalization: type a value then clear → field submits
-  as `null`, not `""`
+- Body metrics entry screen still works end-to-end (one submit test
+  with valid input, one test with invalid input showing the inline
+  error)
+- No TypeScript errors, no runtime errors
 
-### Checkpoint 2 — Home Screen Body Metrics Summary
-Modify `client/app/index.tsx`.
+### Checkpoint 2 — Detail Screen + Routing
+New route: `client/app/body-metrics-detail.tsx`.
 
-**Data requirement:**
-- Latest `body_metrics` row for the **selected local date**
-- Current `profiles.height_m` for BMI
+**Routing:**
+- `fetchLatestBodyMetrics` in `client/app/index.tsx` must be extended
+  to include `id` in its select and return shape. Update
+  `BodyMetricsSummary` type accordingly.
+- The Home screen body metrics block becomes tappable **only when
+  there is a row for the selected date** (i.e. `bodyMetrics != null`).
+  Use conditional rendering: `<TouchableOpacity>` when there's data,
+  plain `<View>` when empty. Do not always-render a tappable wrapper
+  with logic inside.
+- On tap, route to `/body-metrics-detail?id=<row id>`.
 
-**Query rule — local day boundaries (same pattern as the daily macro totals query):**
+**Screen structure:**
+- Same five body metric fields as the entry screen (pre-filled from
+  the fetched row), importing shared helpers from Checkpoint 1
+- Date picker pre-filled with the row's `logged_at` date
+- No height section
+- Save button, Delete button, Back link to Home
 
-```sql
-where user_id = auth.uid()
-  and logged_at >= :local_day_start
-  and logged_at <  :local_day_end
-order by logged_at desc, created_at desc
-limit 1
-```
+**Route param handling:**
+- Missing `id` query param → error state rendered on the screen, no
+  Supabase call
+- Fetch error or row not found → error state with return-to-Home option
 
-The `created_at desc` secondary sort is a deterministic tie-breaker —
-two past-date check-ins written on the same date both get
-`logged_at = local noon`, so insertion order decides which is "latest."
+**On mount:**
+- Show loading indicator while fetching
+- Fetch the row by `id` (RLS scopes to current user — a user cannot
+  retrieve another user's row regardless of id)
+- Populate all fields from the fetched row
+- If row does not exist (deleted elsewhere, stale id, or RLS-filtered),
+  show "Entry not found" error state with return-to-Home button
 
-Follow the documented BMI join pattern in `data-model.md`. Don't invent
-a different fetch shape.
+**Validation:** identical rules to the entry screen, using shared
+helpers:
+- `body_fat_pct` — `>= 0 and <= 100`
+- Other numerics — `> 0`
+- Empty strings normalize to `null`
+- At least one of the five metric fields must be non-null after edit
+- Non-numeric input blocks submit
 
-**Stale response handling:** use the same pattern already in place for
-the daily macro totals query on this screen. If the selected date
-changes mid-fetch, stale results must not overwrite newer ones.
+**Save behavior:**
+- Disable Save button while request is in flight
+- Call `supabase.from('body_metrics').update({ ... }).eq('id', id).select()`
+  (the `.select()` returns affected rows so we can count them)
+- **Verify exactly one row was updated.** If zero rows affected, show
+  "Entry no longer available — it may have been deleted" error, offer
+  return to Home. Do not navigate as if success.
+- On one row updated: navigate back to Home. Home refetches on focus.
+- On error: surface message, stay on screen, re-enable Save, do not
+  clear fields
 
-**Display position:** under the date picker, above the macro totals.
-
-**Display content:**
-- `weight_kg`, `body_fat_pct`, `neck_cm`, `waist_cm`, `forearm_cm` —
-  null fields render as `-`
-- Values display raw as stored, no unit conversion
-- BMI — `round(weight_kg / power(height_m, 2), 1)`
-  - If `weight_kg` is null OR `height_m` is null → `-`
-- No body_metrics row for the selected date → all fields render as `-`
-
-**Decision (flag if you disagree):** if a user has multiple check-ins on
-the same date, Home shows only the latest. Listing multiple per day is
-a future task if it ever becomes a real use case.
+**Delete behavior:**
+- Confirm dialog: "Delete this check-in? This cannot be undone."
+- Disable Delete button while request is in flight
+- On confirm: `supabase.from('body_metrics').delete().eq('id', id).select()`
+- **Verify exactly one row was deleted.** Zero rows affected → same
+  error flow as Save.
+- On success: navigate back to Home
+- On cancel or error: stay on screen
 
 **Developer verifies on device:**
-- Date with a check-in shows values
-- Date without a check-in shows all `-`
-- Clearing height in profile makes BMI show `-` on every date; other
-  fields unaffected
-- Switching date refreshes both metrics and macros
-- Rapid date switching: no stale values from the wrong day leak into
-  the display
-- Same-date tie-break: two past-date check-ins with identical
-  `logged_at` — the one inserted later wins
+- Home body metrics block with data → tappable → detail screen opens
+  with fields pre-filled
+- Home body metrics block with all `-` → not tappable
+- Edit a single field, save → Home reflects new value; Supabase shows
+  the row was updated (same id, new values, `updated_at` changed)
+- Edit `logged_at` to a different past date, save → Home no longer
+  shows this entry on the original date; shows it on the new date
+- Delete → confirm → row is gone from Supabase; Home shows all `-` (or
+  an older same-date row if duplicates existed)
+- Delete → cancel → nothing happens
+- Save button disabled during in-flight request (rapid double-tap does
+  not cause two updates — check Supabase row count)
+- Delete button disabled during in-flight request
+- Validation: empty all five fields → save blocked; zero/negative/
+  out-of-range → save blocked
+- Future date not selectable
+- Missing id in URL → error state, no Supabase call visible in
+  network tab
 
-### Checkpoint 3 — RLS + Edge Cases
+### Checkpoint 3 — RLS + Affected-Row Verification
 Manual two-user test:
-- User A inserts a `body_metrics` row; User B cannot SELECT or UPDATE it
-- User A's height update does not affect User B's profile row
-- Confirm via Supabase dashboard and in-app state for both users
+- User A: log a body metrics entry, copy the row `id` from Supabase
+- User A: edit and save → confirm row updated (correct row, correct user)
+- User A: log another entry; copy that id too
+- User B: attempt to navigate directly to
+  `/body-metrics-detail?id=<A's row id>` → expected: fetch returns no
+  row (RLS filters), "Entry not found" error state shows
 
-Edge cases:
-- Unauthenticated request to insert is rejected
-- Rapid date switching does not leak values from the wrong day
-  (covered by stale-response pattern in Checkpoint 2)
-- Empty submit (no body metric fields, height unchanged) is blocked
-  before any request fires
-- Non-numeric input rejected cleanly
-- Form with all five metric fields empty AND unchanged height cannot submit
+**Stale-id tests:**
+- Open detail screen in one session (tab 1); delete the row in Supabase
+  dashboard; attempt Save in tab 1 → expected: "Entry no longer
+  available" error (zero rows affected)
+- Same setup but attempt Delete in tab 1 → expected: same error
 
 ## Out of Scope
-- Edit or delete of existing body_metrics entries (separate task, same pattern as food log edit)
-- Charts, trends, or history view for body metrics (Dashboard task)
-- BMI category labels ("healthy", "overweight") — just the number or `-`
-- Any schema or migration changes
+- Body metrics history / list view (deferred to Dashboard task)
+- Editing older same-date duplicates (Supabase dashboard fallback)
+- Success toast on save/delete (polish, later)
+- Visual affordance on tappable Home block (chevron, etc. — polish, later)
+- Unsaved-changes warning on back navigation
+- UUID format validation on the id route param (Supabase will reject
+  malformed queries; cost not worth it)
+- Any changes to the entry screen beyond the helpers extraction
 - Any changes to food logging
-- True atomicity of the two-write submit (would need a server-side RPC — deferred)
+- Any schema or migration changes
+- Charts / trends / BMI history
 
 ## Flagged
-- Home screen queries (daily logs + body metrics) have no stale-response guard. A rapid date switch where the older fetch resolves after the newer one could display wrong-day data. Acceptable for MVP; revisit if it causes visible bugs.
-- Body metrics screen date picker defaults to today. It should instead open on the date currently selected on Home — if the user opened the body metrics screen from a past date on Home, that context is lost and requires re-navigating the picker. UX gap, not a data issue. Separate follow-up task.
+- Nothing currently.
 
 ## Completed
 
-### Checkpoint 1 — Body Metrics Entry Screen
-Entry form with date picker, five body metric fields, separate height section writing to `profiles`, client-side validation, two-step submit with partial-failure handling, and inline validation message above Save button.
-- `client/app/body-metrics.tsx` (new)
-- `client/app/index.tsx` (added "Body Metrics" nav link)
+### Checkpoint 1 — Shared Helpers Extraction
+Extracted `todayStr`, `parsePositive`, `parseBodyFat`, `buildLoggedAt` into shared module. Entry screen and Home screen import from shared file.
+- `client/lib/body-metrics-helpers.ts` (new)
+- `client/app/body-metrics.tsx` (removed inline helpers, imports from shared file)
+- `client/app/index.tsx` (removed duplicate `todayStr`, imports from shared file)
 
-### Checkpoint 2 — Home Screen Body Metrics Summary
-Latest body_metrics row for the selected date displayed above macro totals, with two parallel fetches (body_metrics + profiles.height_m), BMI computed client-side, null fields as `-`, `created_at desc` tie-break.
-- `client/app/index.tsx` (body metrics fetch, state, display)
+### Checkpoint 2 — Detail Screen + Routing
+Edit/delete detail screen with pre-filled fields, validation via shared helpers, affected-row verification on save/delete, confirm dialog on delete. Home body metrics block conditionally tappable.
+- `client/app/body-metrics-detail.tsx` (new)
+- `client/app/index.tsx` (added `id` to BodyMetricsSummary type/query, conditional TouchableOpacity vs View)
 
-### Checkpoint 3 — RLS + Edge Cases
-Verification-only: confirmed two-user body_metrics and profiles.height_m isolation via RLS by signing in as a second user and observing empty state across all dates. No files changed.
+### Checkpoint 3 — RLS + Affected-Row Verification
+Verification-only: confirmed cross-user RLS isolation on detail screen fetch, stale-id save/delete returns zero-rows-affected error. No files changed.

@@ -4,6 +4,7 @@ import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/dat
 import { router, useFocusEffect } from 'expo-router';
 import { supabase } from '../lib/supabase';
 import { foodLogsWithMacros } from '../lib/queries';
+import { todayStr } from '../lib/body-metrics-helpers';
 import { Session } from '@supabase/supabase-js';
 
 // --- Types ---
@@ -20,6 +21,7 @@ type DailyLogEntry = {
 };
 
 type BodyMetricsSummary = {
+  id: string;
   weight_kg: number | null;
   body_fat_pct: number | null;
   neck_cm: number | null;
@@ -36,17 +38,12 @@ function getLocalDayBounds(dateStr: string): { start: string; end: string } {
   return { start: start.toISOString(), end: next.toISOString() };
 }
 
-function todayStr(): string {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-}
-
 async function fetchLatestBodyMetrics(dateStr: string): Promise<BodyMetricsSummary | null> {
   const { start, end } = getLocalDayBounds(dateStr);
 
   const { data, error } = await supabase
     .from('body_metrics')
-    .select('weight_kg, body_fat_pct, neck_cm, waist_cm, forearm_cm')
+    .select('id, weight_kg, body_fat_pct, neck_cm, waist_cm, forearm_cm')
     .gte('logged_at', start)
     .lt('logged_at', end)
     .order('logged_at', { ascending: false })
@@ -58,6 +55,7 @@ async function fetchLatestBodyMetrics(dateStr: string): Promise<BodyMetricsSumma
   if (!data) return null;
 
   return {
+    id: data.id,
     weight_kg: data.weight_kg != null ? Number(data.weight_kg) : null,
     body_fat_pct: data.body_fat_pct != null ? Number(data.body_fat_pct) : null,
     neck_cm: data.neck_cm != null ? Number(data.neck_cm) : null,
@@ -242,21 +240,32 @@ export default function Index() {
             {!loadingLogs && !logError && (
               <>
                 {/* Body Metrics Summary */}
-                <View style={{ backgroundColor: '#f5f5f5', padding: 12, borderRadius: 4, marginBottom: 12 }}>
+                {bodyMetrics != null ? (
+                <TouchableOpacity
+                  onPress={() => router.push(`/body-metrics-detail?id=${bodyMetrics.id}`)}
+                  style={{ backgroundColor: '#f5f5f5', padding: 12, borderRadius: 4, marginBottom: 12 }}
+                >
                   <Text style={{ fontWeight: 'bold', marginBottom: 4 }}>Body Metrics</Text>
                   <Text>
-                    Weight: {bodyMetrics?.weight_kg != null ? `${bodyMetrics.weight_kg} kg` : '-'}
-                    {' | '}Body fat: {bodyMetrics?.body_fat_pct != null ? `${bodyMetrics.body_fat_pct}%` : '-'}
-                    {' | '}BMI: {bodyMetrics?.weight_kg != null && heightM != null
+                    Weight: {bodyMetrics.weight_kg != null ? `${bodyMetrics.weight_kg} kg` : '-'}
+                    {' | '}Body fat: {bodyMetrics.body_fat_pct != null ? `${bodyMetrics.body_fat_pct}%` : '-'}
+                    {' | '}BMI: {bodyMetrics.weight_kg != null && heightM != null
                       ? Math.round(bodyMetrics.weight_kg / (heightM * heightM) * 10) / 10
                       : '-'}
                   </Text>
                   <Text style={{ fontSize: 12, color: '#555' }}>
-                    Neck: {bodyMetrics?.neck_cm != null ? `${bodyMetrics.neck_cm} cm` : '-'}
-                    {' | '}Waist: {bodyMetrics?.waist_cm != null ? `${bodyMetrics.waist_cm} cm` : '-'}
-                    {' | '}Forearm: {bodyMetrics?.forearm_cm != null ? `${bodyMetrics.forearm_cm} cm` : '-'}
+                    Neck: {bodyMetrics.neck_cm != null ? `${bodyMetrics.neck_cm} cm` : '-'}
+                    {' | '}Waist: {bodyMetrics.waist_cm != null ? `${bodyMetrics.waist_cm} cm` : '-'}
+                    {' | '}Forearm: {bodyMetrics.forearm_cm != null ? `${bodyMetrics.forearm_cm} cm` : '-'}
                   </Text>
+                </TouchableOpacity>
+                ) : (
+                <View style={{ backgroundColor: '#f5f5f5', padding: 12, borderRadius: 4, marginBottom: 12 }}>
+                  <Text style={{ fontWeight: 'bold', marginBottom: 4 }}>Body Metrics</Text>
+                  <Text>Weight: - | Body fat: - | BMI: -</Text>
+                  <Text style={{ fontSize: 12, color: '#555' }}>Neck: - | Waist: - | Forearm: -</Text>
                 </View>
+                )}
 
                 {/* Totals */}
                 <View style={{ backgroundColor: '#f5f5f5', padding: 12, borderRadius: 4, marginBottom: 12 }}>

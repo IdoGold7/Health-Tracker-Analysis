@@ -10,32 +10,7 @@ import {
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { router } from 'expo-router';
 import { supabase } from '../lib/supabase';
-
-// --- Helpers ---
-
-function todayStr(): string {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-}
-
-/** Parse a non-empty string to a positive number, or return null for empty/invalid. */
-function parsePositive(value: string): number | null {
-  const trimmed = value.trim();
-  if (trimmed === '') return null;
-  const num = Number(trimmed);
-  if (isNaN(num)) return NaN as any;
-  if (num <= 0) return NaN as any;
-  return num;
-}
-
-function parseBodyFat(value: string): number | null {
-  const trimmed = value.trim();
-  if (trimmed === '') return null;
-  const num = Number(trimmed);
-  if (isNaN(num)) return NaN as any;
-  if (num < 0 || num > 100) return NaN as any;
-  return num;
-}
+import { todayStr, parsePositive, parseBodyFat, buildLoggedAt } from '../lib/body-metrics-helpers';
 
 // --- Component ---
 
@@ -146,13 +121,7 @@ export default function BodyMetrics() {
     }
 
     // Determine logged_at
-    const today = todayStr();
-    let loggedAt: string;
-    if (selectedDate === today) {
-      loggedAt = new Date().toISOString();
-    } else {
-      loggedAt = new Date(`${selectedDate}T12:00:00`).toISOString();
-    }
+    const loggedAt = buildLoggedAt(selectedDate);
 
     // Step 1: Insert body_metrics if needed
     if (bodyMetrics) {
