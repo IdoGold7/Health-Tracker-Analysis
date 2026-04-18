@@ -19,6 +19,14 @@ type DailyLogEntry = {
   fat_g: number;
 };
 
+type BodyMetricsSummary = {
+  weight_kg: number | null;
+  body_fat_pct: number | null;
+  neck_cm: number | null;
+  waist_cm: number | null;
+  forearm_cm: number | null;
+};
+
 // --- Query ---
 
 function getLocalDayBounds(dateStr: string): { start: string; end: string } {
@@ -31,6 +39,45 @@ function getLocalDayBounds(dateStr: string): { start: string; end: string } {
 function todayStr(): string {
   const now = new Date();
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+}
+
+async function fetchLatestBodyMetrics(dateStr: string): Promise<BodyMetricsSummary | null> {
+  const { start, end } = getLocalDayBounds(dateStr);
+
+  const { data, error } = await supabase
+    .from('body_metrics')
+    .select('weight_kg, body_fat_pct, neck_cm, waist_cm, forearm_cm')
+    .gte('logged_at', start)
+    .lt('logged_at', end)
+    .order('logged_at', { ascending: false })
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!data) return null;
+
+  return {
+    weight_kg: data.weight_kg != null ? Number(data.weight_kg) : null,
+    body_fat_pct: data.body_fat_pct != null ? Number(data.body_fat_pct) : null,
+    neck_cm: data.neck_cm != null ? Number(data.neck_cm) : null,
+    waist_cm: data.waist_cm != null ? Number(data.waist_cm) : null,
+    forearm_cm: data.forearm_cm != null ? Number(data.forearm_cm) : null,
+  };
+}
+
+async function fetchProfileHeight(): Promise<number | null> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return null;
+
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('height_m')
+    .eq('id', user.id)
+    .single();
+
+  if (error) throw error;
+  return data.height_m != null ? Number(data.height_m) : null;
 }
 
 async function fetchDailyLogs(dateStr: string): Promise<DailyLogEntry[]> {
@@ -69,6 +116,8 @@ export default function Index() {
   const [loadingLogs, setLoadingLogs] = useState(false);
   const [logError, setLogError] = useState<string | null>(null);
   const [showPicker, setShowPicker] = useState(false);
+  const [bodyMetrics, setBodyMetrics] = useState<BodyMetricsSummary | null>(null);
+  const [heightM, setHeightM] = useState<number | null>(null);
 
   useEffect(() => {
     // Restore session from AsyncStorage on mount
@@ -89,13 +138,22 @@ export default function Index() {
     setLoadingLogs(true);
     setLogError(null);
     setEntries([]);
+    setBodyMetrics(null);
     try {
-      const data = await fetchDailyLogs(selectedDate);
+      const [data, metrics, height] = await Promise.all([
+        fetchDailyLogs(selectedDate),
+        fetchLatestBodyMetrics(selectedDate),
+        fetchProfileHeight(),
+      ]);
       setEntries(data);
+      setBodyMetrics(metrics);
+      setHeightM(height);
     } catch (err: any) {
       console.error('Failed to fetch daily logs:', err);
       setLogError(err.message ?? 'Failed to load logs.');
       setEntries([]);
+      setBodyMetrics(null);
+      setHeightM(null);
     }
     setLoadingLogs(false);
   }, [session, selectedDate]);
@@ -183,6 +241,23 @@ export default function Index() {
 
             {!loadingLogs && !logError && (
               <>
+                {/* Body Metrics Summary */}
+                <View style={{ backgroundColor: '#f5f5f5', padding: 12, borderRadius: 4, marginBottom: 12 }}>
+                  <Text style={{ fontWeight: 'bold', marginBottom: 4 }}>Body Metrics</Text>
+                  <Text>
+                    Weight: {bodyMetrics?.weight_kg != null ? `${bodyMetrics.weight_kg} kg` : '-'}
+                    {' | '}Body fat: {bodyMetrics?.body_fat_pct != null ? `${bodyMetrics.body_fat_pct}%` : '-'}
+                    {' | '}BMI: {bodyMetrics?.weight_kg != null && heightM != null
+                      ? Math.round(bodyMetrics.weight_kg / (heightM * heightM) * 10) / 10
+                      : '-'}
+                  </Text>
+                  <Text style={{ fontSize: 12, color: '#555' }}>
+                    Neck: {bodyMetrics?.neck_cm != null ? `${bodyMetrics.neck_cm} cm` : '-'}
+                    {' | '}Waist: {bodyMetrics?.waist_cm != null ? `${bodyMetrics.waist_cm} cm` : '-'}
+                    {' | '}Forearm: {bodyMetrics?.forearm_cm != null ? `${bodyMetrics.forearm_cm} cm` : '-'}
+                  </Text>
+                </View>
+
                 {/* Totals */}
                 <View style={{ backgroundColor: '#f5f5f5', padding: 12, borderRadius: 4, marginBottom: 12 }}>
                   <Text style={{ fontWeight: 'bold', marginBottom: 4 }}>Totals</Text>

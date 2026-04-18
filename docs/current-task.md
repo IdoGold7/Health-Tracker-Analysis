@@ -161,7 +161,8 @@ Edge cases:
 - True atomicity of the two-write submit (would need a server-side RPC — deferred)
 
 ## Flagged
-- Nothing currently.
+- Home screen queries (daily logs + body metrics) have no stale-response guard. A rapid date switch where the older fetch resolves after the newer one could display wrong-day data. Acceptable for MVP; revisit if it causes visible bugs.
+- Body metrics screen date picker defaults to today. It should instead open on the date currently selected on Home — if the user opened the body metrics screen from a past date on Home, that context is lost and requires re-navigating the picker. UX gap, not a data issue. Separate follow-up task.
 
 ## Completed
 
@@ -169,3 +170,7 @@ Edge cases:
 Entry form with date picker, five body metric fields, separate height section writing to `profiles`, client-side validation, two-step submit with partial-failure handling, and inline validation message above Save button.
 - `client/app/body-metrics.tsx` (new)
 - `client/app/index.tsx` (added "Body Metrics" nav link)
+
+### Checkpoint 2 — Home Screen Body Metrics Summary
+Latest body_metrics row for the selected date displayed above macro totals, with two parallel fetches (body_metrics + profiles.height_m), BMI computed client-side, null fields as `-`, `created_at desc` tie-break.
+- `client/app/index.tsx` (body metrics fetch, state, display)
