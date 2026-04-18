@@ -174,3 +174,6 @@ Entry form with date picker, five body metric fields, separate height section wr
 ### Checkpoint 2 — Home Screen Body Metrics Summary
 Latest body_metrics row for the selected date displayed above macro totals, with two parallel fetches (body_metrics + profiles.height_m), BMI computed client-side, null fields as `-`, `created_at desc` tie-break.
 - `client/app/index.tsx` (body metrics fetch, state, display)
+
+### Checkpoint 3 — RLS + Edge Cases
+Verification-only: confirmed two-user body_metrics and profiles.height_m isolation via RLS by signing in as a second user and observing empty state across all dates. No files changed.
