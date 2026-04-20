@@ -8,6 +8,7 @@ create table profiles (
   target_carbs_g integer check (target_carbs_g >= 0),
   target_fat_g integer check (target_fat_g >= 0),
   height_m numeric(4,2) check (height_m > 0),
+  target_weight_kg numeric(5,2) check (target_weight_kg > 0),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
