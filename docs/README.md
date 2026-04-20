@@ -88,7 +88,7 @@ npx expo start
 - [x] Food library CRUD
 - [x] Food logging
 - [x] Daily macro totals
-- [ ] Body metrics logging
+- [x] Body metrics logging
 - [ ] Scan label (Claude API)
 - [ ] Dashboard + analytics
 - [ ] Data export + analysis layer
