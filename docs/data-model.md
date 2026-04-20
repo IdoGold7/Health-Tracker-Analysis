@@ -29,6 +29,7 @@ One row per user. Extends `auth.users`.
 | `target_carbs_g` | `integer` | Yes | `null` | Daily carbs target (g). Check: `>= 0` |
 | `target_fat_g` | `integer` | Yes | `null` | Daily fat target (g). Check: `>= 0` |
 | `height_m` | `numeric(4,2)` | Yes | `null` | User height in meters. Check: `> 0`. Used for BMI calculation. |
+| `target_weight_kg` | `numeric(5,2)` | Yes | `null` | Target weight in kg for dynamic macro computation. Check: `> 0` |
 | `created_at` | `timestamptz` | No | `now()` | Auto-set on insert |
 | `updated_at` | `timestamptz` | No | `now()` | Auto-updated via trigger |
 
@@ -40,6 +41,7 @@ create table profiles (
   target_carbs_g integer check (target_carbs_g >= 0),
   target_fat_g integer check (target_fat_g >= 0),
   height_m numeric(4,2) check (height_m > 0),
+  target_weight_kg numeric(5,2) check (target_weight_kg > 0),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -76,6 +78,7 @@ for each row execute function handle_new_user();
 - Targets are nullable — user can exist before setting them. UI shows no progress bars until targets are set.
 - No weight here — it is time-series data and lives in `body_metrics`.
 - `height_m` lives here because it is effectively stable for an adult and needed for BMI derivation at query time.
+- `target_weight_kg` is used for dynamic macro target computation (protein = 2 × target_weight_kg; remaining kcal split 2:1 carbs-to-fat by calories). Falls back to latest `body_metrics.weight_kg` if not set. Stored on `profiles` because it is a user-chosen goal, not a measurement.
 - Integer for all targets — no decimal macro targets needed for MVP.
 - `ON DELETE CASCADE` on the FK to `auth.users` — deleting a user removes their profile. Without this, auth user deletion is blocked or leaves an orphaned row.
 - Profile row is created automatically via `on_auth_user_created` trigger on `auth.users`. The app never inserts into `profiles` directly on signup.

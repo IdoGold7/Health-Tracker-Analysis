@@ -110,7 +110,7 @@ RLS is the primary security boundary. All tables have RLS enabled.
 | Scan Label | Photo → Claude API parses nutrition label *(coming soon)* |
 | Dashboard | Macro trends, body metric charts *(coming soon)* |
 | History | Day-by-day log review *(coming soon)* |
-| Settings | Personal targets (kcal, protein, carbs, fat), preferences |
+| Settings | Personal targets (kcal, protein, carbs, fat, target weight, height), preferences |
 | Watch | Galaxy Watch / Apple Watch placeholder *(Phase 2)* |
 
 ---
