@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { View, TextInput, Button, Text, ScrollView, ActivityIndicator, Platform, TouchableOpacity } from 'react-native';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
-import { router, useFocusEffect } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { supabase } from '../lib/supabase';
 import { foodLogsWithMacros } from '../lib/queries';
 import { todayStr, calcNavyBodyFat } from '../lib/body-metrics-helpers';
@@ -109,7 +109,14 @@ export default function Index() {
   const [password, setPassword] = useState('');
   const [session, setSession] = useState<Session | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [selectedDate, setSelectedDate] = useState(todayStr());
+  const params = useLocalSearchParams<{ date?: string }>();
+  const [selectedDate, setSelectedDate] = useState(() => {
+    const d = params.date;
+    if (typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d) && !isNaN(new Date(`${d}T12:00:00`).getTime())) {
+      return d;
+    }
+    return todayStr();
+  });
   const [entries, setEntries] = useState<DailyLogEntry[]>([]);
   const [loadingLogs, setLoadingLogs] = useState(false);
   const [logError, setLogError] = useState<string | null>(null);
@@ -210,7 +217,7 @@ export default function Index() {
         {error && <Text style={{ color: 'red' }}>{error}</Text>}
         {session && <Button title="Go to Library" onPress={() => router.push('/library')} />}
         {session && <Button title="Log Food" onPress={() => router.push('/log-food')} />}
-        {session && <Button title="Body Metrics" onPress={() => router.push('/body-metrics')} />}
+        {session && <Button title="Body Metrics" onPress={() => router.push(`/body-metrics?date=${selectedDate}`)} />}
         {session && <Button title="Sign Out" onPress={() => supabase.auth.signOut()} />}
 
         {/* Daily macro display */}

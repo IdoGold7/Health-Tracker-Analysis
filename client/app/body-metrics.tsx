@@ -8,14 +8,21 @@ import {
   Platform,
 } from 'react-native';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { supabase } from '../lib/supabase';
 import { todayStr, parsePositive, parseBodyFat, buildLoggedAt } from '../lib/body-metrics-helpers';
 
 // --- Component ---
 
 export default function BodyMetrics() {
-  const [selectedDate, setSelectedDate] = useState(todayStr());
+  const params = useLocalSearchParams<{ date?: string }>();
+  const [selectedDate, setSelectedDate] = useState(() => {
+    const d = params.date;
+    if (typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d) && !isNaN(new Date(`${d}T12:00:00`).getTime())) {
+      return d;
+    }
+    return todayStr();
+  });
   const [showPicker, setShowPicker] = useState(false);
 
   // Body metric fields (string inputs)
@@ -174,6 +181,7 @@ export default function BodyMetrics() {
     setSubmitSuccess('Saved!');
     setSubmitting(false);
     setTimeout(() => setSubmitSuccess(null), 3000);
+    router.replace(`/?date=${selectedDate}`);
   }
 
   // --- Compute whether submit is enabled ---

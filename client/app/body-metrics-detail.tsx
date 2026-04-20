@@ -149,7 +149,7 @@ export default function BodyMetricsDetail() {
       return;
     }
 
-    router.replace('/');
+    router.replace(`/?date=${selectedDate}`);
   }
 
   // --- Delete ---
@@ -182,7 +182,7 @@ export default function BodyMetricsDetail() {
             return;
           }
 
-          router.replace('/');
+          router.replace(`/?date=${selectedDate}`);
         },
       },
     ]);
@@ -202,7 +202,7 @@ export default function BodyMetricsDetail() {
     return (
       <View style={{ padding: 20, gap: 12 }}>
         <Text style={{ color: 'red', fontSize: 16 }}>{fetchError}</Text>
-        <TouchableOpacity onPress={() => router.replace('/')}>
+        <TouchableOpacity onPress={() => router.replace(`/?date=${selectedDate}`)}>
           <Text style={{ color: '#2196F3' }}>← Home</Text>
         </TouchableOpacity>
       </View>
@@ -322,7 +322,7 @@ export default function BodyMetricsDetail() {
         </TouchableOpacity>
 
         {/* Back to Home */}
-        <TouchableOpacity onPress={() => router.replace('/')} style={{ marginTop: 8 }}>
+        <TouchableOpacity onPress={() => router.replace(`/?date=${selectedDate}`)} style={{ marginTop: 8 }}>
           <Text style={{ color: '#2196F3' }}>← Home</Text>
         </TouchableOpacity>
       </View>
