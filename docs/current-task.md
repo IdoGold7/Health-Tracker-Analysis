@@ -1,177 +1,131 @@
-markdown# Current Task
+# Current Task
 
 ## Objective
-Add edit and delete for existing `body_metrics` entries via a new detail
-screen reached from the Home screen body metrics block.
+Display Navy body fat % estimate on the Home screen body metrics block,
+computed from existing data (`neck_cm`, `waist_cm` from `body_metrics`,
+`height_m` from `profiles`). Shown alongside the manual `body_fat_pct`
+value — not replacing it.
 
 ## Docs to Read
-- `docs/data-model.md` — `body_metrics` section (editable fields, RLS)
-- `docs/architecture.md` — screen list, data flow
+- `docs/data-model.md` — `body_metrics` columns, `profiles.height_m`
 
 ## Context
-Body metrics entries are currently insert-only from the app. Correcting
-a mistyped value creates a duplicate row; only the latest shows on Home
-(ordered by `logged_at desc, created_at desc`). Clean dataset is the
-project's primary goal, so the correction path must actually UPDATE or
-DELETE rows, not append over them.
+Circumference columns (`neck_cm`, `waist_cm`) were added to
+`body_metrics` specifically to support this calculation. The data is
+already being collected. This task adds the display-only computation.
 
-Database already supports this — the `body_metrics` migration added
-UPDATE and DELETE RLS policies in a prior task. This is UI-only work.
+The US Navy body fat formula (male) is:
 
-Scope boundary: this task edits **one** entry at a time — the latest
-entry for the selected date on Home. Older same-date duplicates are
-reachable only via the Supabase dashboard until a body metrics history
-screen exists. Documented, intentional.
+```
+body_fat_% = 86.010 × log10(waist_cm - neck_cm) - 70.041 × log10(height_cm) + 36.76
+```
+
+Where `height_cm = height_m × 100`.
+
+This follows the same non-persisted derived-metric pattern as BMI, but
+the calculation happens locally in the app via a helper function, not
+in the database query. No query changes, no schema changes.
+
+Hardcoded to male formula — gender selection is out of scope
+(documented, intentional, portfolio project with single user).
 
 ## In Scope
 
-### Checkpoint 1 — Shared Helpers Extraction
-Before writing the detail screen, extract shared logic from
-`client/app/body-metrics.tsx` into a new file
-`client/lib/body-metrics-helpers.ts`.
+### Checkpoint 1 — Helper Function
+Add to `client/lib/body-metrics-helpers.ts`:
 
-Extract the following pure functions (no component state, no hooks):
-- `parsePositive(value: string): number | null`
-- `parseBodyFat(value: string): number | null`
-- `buildLoggedAt(selectedDate: string): string` — the "today → now(),
-  past date → local noon" construction
-- `todayStr(): string` — already exists, move it too
+```typescript
+/**
+ * US Navy body fat % estimate (male formula).
+ * Returns null if any input is missing or invalid.
+ */
+export function calcNavyBodyFat(
+  neck_cm: number | null,
+  waist_cm: number | null,
+  height_m: number | null
+): number | null
+```
 
-The existing entry screen must import these from the new file after
-extraction. No behavior change on the entry screen — this is
-mechanical refactor only.
+Rules:
+- If any of the three inputs is `null`, return `null`
+- If `height_m <= 0` or `neck_cm <= 0` or `waist_cm <= 0`, return
+  `null`
+- If `waist_cm <= neck_cm`, return `null` (formula produces
+  nonsensical output — log of zero or negative)
+- Convert `height_m` to cm: `height_m × 100`
+- Apply formula: `86.010 × log10(waist - neck) - 70.041 × log10(height_cm) + 36.76`
+- Return a `number | null`, already rounded to one decimal place.
+  The UI renders the returned number directly and must not apply
+  additional rounding or formatting logic.
+- If the computed result is not finite (`NaN`, `Infinity`, `-Infinity`),
+  return `null`
+- Pure function, no side effects, no Supabase calls
 
-**Developer verifies on device:**
-- Body metrics entry screen still works end-to-end (one submit test
-  with valid input, one test with invalid input showing the inline
-  error)
-- No TypeScript errors, no runtime errors
+**Verification:** Developer runs the function mentally or in a
+scratch file with known values:
+- neck=38, waist=85, height=1.78 → expected ≈ 18.6%
+- neck=null → returns null
+- waist=30, neck=35 (waist < neck) → returns null
+- height=0 → returns null
+- neck=0 → returns null
 
-### Checkpoint 2 — Detail Screen + Routing
-New route: `client/app/body-metrics-detail.tsx`.
+### Checkpoint 2 — Home Screen Display
+Update the body metrics block in `client/app/index.tsx`.
 
-**Routing:**
-- `fetchLatestBodyMetrics` in `client/app/index.tsx` must be extended
-  to include `id` in its select and return shape. Update
-  `BodyMetricsSummary` type accordingly.
-- The Home screen body metrics block becomes tappable **only when
-  there is a row for the selected date** (i.e. `bodyMetrics != null`).
-  Use conditional rendering: `<TouchableOpacity>` when there's data,
-  plain `<View>` when empty. Do not always-render a tappable wrapper
-  with logic inside.
-- On tap, route to `/body-metrics-detail?id=<row id>`.
+**Data available:** `bodyMetrics` already has `neck_cm`, `waist_cm`,
+`body_fat_pct`. `heightM` is already fetched from `profiles`.
 
-**Screen structure:**
-- Same five body metric fields as the entry screen (pre-filled from
-  the fetched row), importing shared helpers from Checkpoint 1
-- Date picker pre-filled with the row's `logged_at` date
-- No height section
-- Save button, Delete button, Back link to Home
+**Compute once before render:** Call `calcNavyBodyFat` once with
+`bodyMetrics?.neck_cm`, `bodyMetrics?.waist_cm`, `heightM` and store
+the result. Use the same derived value in both tappable and
+non-tappable render variants. Do not duplicate calculation logic
+inline across branches.
 
-**Route param handling:**
-- Missing `id` query param → error state rendered on the screen, no
-  Supabase call
-- Fetch error or row not found → error state with return-to-Home option
+**Display change:** Add Navy estimate to the body metrics summary.
+Current display has:
+```
+Weight: X kg | Body fat: X% | BMI: X
+Neck: X cm | Waist: X cm | Forearm: X cm
+```
 
-**On mount:**
-- Show loading indicator while fetching
-- Fetch the row by `id` (RLS scopes to current user — a user cannot
-  retrieve another user's row regardless of id)
-- Populate all fields from the fetched row
-- If row does not exist (deleted elsewhere, stale id, or RLS-filtered),
-  show "Entry not found" error state with return-to-Home button
+New display:
+```
+Weight: X kg | Body fat: X% | BMI: X
+Navy BF: X% | Neck: X cm | Waist: X cm | Forearm: X cm
+```
 
-**Validation:** identical rules to the entry screen, using shared
-helpers:
-- `body_fat_pct` — `>= 0 and <= 100`
-- Other numerics — `> 0`
-- Empty strings normalize to `null`
-- At least one of the five metric fields must be non-null after edit
-- Non-numeric input blocks submit
+Rules:
+- If result is `null`, show `Navy BF: -`
+- If result is a number, show `Navy BF: X%` using the returned value
+  directly (no additional rounding)
+- Import `calcNavyBodyFat` from helpers
+- Non-tappable variant: `Navy BF: -` (same as other missing values)
 
-**Save behavior:**
-- Disable Save button while request is in flight
-- Call `supabase.from('body_metrics').update({ ... }).eq('id', id).select()`
-  (the `.select()` returns affected rows so we can count them)
-- **Verify exactly one row was updated.** If zero rows affected, show
-  "Entry no longer available — it may have been deleted" error, offer
-  return to Home. Do not navigate as if success.
-- On one row updated: navigate back to Home. Home refetches on focus.
-- On error: surface message, stay on screen, re-enable Save, do not
-  clear fields
-
-**Delete behavior:**
-- Confirm dialog: "Delete this check-in? This cannot be undone."
-- Disable Delete button while request is in flight
-- On confirm: `supabase.from('body_metrics').delete().eq('id', id).select()`
-- **Verify exactly one row was deleted.** Zero rows affected → same
-  error flow as Save.
-- On success: navigate back to Home
-- On cancel or error: stay on screen
+**No changes to:**
+- Body metrics entry screen
+- Body metrics detail screen
+- Any database queries or schema
+- The manual `body_fat_pct` field or display
 
 **Developer verifies on device:**
-- Home body metrics block with data → tappable → detail screen opens
-  with fields pre-filled
-- Home body metrics block with all `-` → not tappable
-- Edit a single field, save → Home reflects new value; Supabase shows
-  the row was updated (same id, new values, `updated_at` changed)
-- Edit `logged_at` to a different past date, save → Home no longer
-  shows this entry on the original date; shows it on the new date
-- Delete → confirm → row is gone from Supabase; Home shows all `-` (or
-  an older same-date row if duplicates existed)
-- Delete → cancel → nothing happens
-- Save button disabled during in-flight request (rapid double-tap does
-  not cause two updates — check Supabase row count)
-- Delete button disabled during in-flight request
-- Validation: empty all five fields → save blocked; zero/negative/
-  out-of-range → save blocked
-- Future date not selectable
-- Missing id in URL → error state, no Supabase call visible in
-  network tab
-
-### Checkpoint 3 — RLS + Affected-Row Verification
-Manual two-user test:
-- User A: log a body metrics entry, copy the row `id` from Supabase
-- User A: edit and save → confirm row updated (correct row, correct user)
-- User A: log another entry; copy that id too
-- User B: attempt to navigate directly to
-  `/body-metrics-detail?id=<A's row id>` → expected: fetch returns no
-  row (RLS filters), "Entry not found" error state shows
-
-**Stale-id tests:**
-- Open detail screen in one session (tab 1); delete the row in Supabase
-  dashboard; attempt Save in tab 1 → expected: "Entry no longer
-  available" error (zero rows affected)
-- Same setup but attempt Delete in tab 1 → expected: same error
+- Entry with neck=38, waist=85, height=1.78 → Navy BF shows ≈ 18.6%
+- Entry with only weight (no neck or waist) → Navy BF shows `-`
+- Entry with neck and waist but no height set in profiles → Navy BF
+  shows `-`
+- No data for selected date → entire block shows dashes including
+  Navy BF
+- Manual body fat % still displays independently alongside Navy BF
 
 ## Out of Scope
-- Body metrics history / list view (deferred to Dashboard task)
-- Editing older same-date duplicates (Supabase dashboard fallback)
-- Success toast on save/delete (polish, later)
-- Visual affordance on tappable Home block (chevron, etc. — polish, later)
-- Unsaved-changes warning on back navigation
-- UUID format validation on the id route param (Supabase will reject
-  malformed queries; cost not worth it)
-- Any changes to the entry screen beyond the helpers extraction
-- Any changes to food logging
+- Female formula / gender selection
+- Storing Navy BF in the database
+- Showing Navy BF on detail or entry screens
+- Forearm in the formula (Navy method uses neck + waist only)
+- Any changes to body metrics entry or detail screens
 - Any schema or migration changes
-- Charts / trends / BMI history
 
 ## Flagged
 - Nothing currently.
 
 ## Completed
-
-### Checkpoint 1 — Shared Helpers Extraction
-Extracted `todayStr`, `parsePositive`, `parseBodyFat`, `buildLoggedAt` into shared module. Entry screen and Home screen import from shared file.
-- `client/lib/body-metrics-helpers.ts` (new)
-- `client/app/body-metrics.tsx` (removed inline helpers, imports from shared file)
-- `client/app/index.tsx` (removed duplicate `todayStr`, imports from shared file)
-
-### Checkpoint 2 — Detail Screen + Routing
-Edit/delete detail screen with pre-filled fields, validation via shared helpers, affected-row verification on save/delete, confirm dialog on delete. Home body metrics block conditionally tappable.
-- `client/app/body-metrics-detail.tsx` (new)
-- `client/app/index.tsx` (added `id` to BodyMetricsSummary type/query, conditional TouchableOpacity vs View)
-
-### Checkpoint 3 — RLS + Affected-Row Verification
-Verification-only: confirmed cross-user RLS isolation on detail screen fetch, stale-id save/delete returns zero-rows-affected error. No files changed.
+*(empty — work has not started)*

@@ -24,6 +24,29 @@ export function parseBodyFat(value: string): number | null {
   return num;
 }
 
+/**
+ * US Navy body fat % estimate (male formula).
+ * Returns null if any input is missing or invalid.
+ */
+export function calcNavyBodyFat(
+  neck_cm: number | null,
+  waist_cm: number | null,
+  height_m: number | null
+): number | null {
+  if (neck_cm === null || waist_cm === null || height_m === null) return null;
+  if (neck_cm <= 0 || waist_cm <= 0 || height_m <= 0) return null;
+  if (waist_cm <= neck_cm) return null;
+  const height_cm = height_m * 100;
+  const result =
+    495 /
+      (1.0324 -
+        0.19077 * Math.log10(waist_cm - neck_cm) +
+        0.15456 * Math.log10(height_cm)) -
+    450;
+  if (!Number.isFinite(result)) return null;
+  return Math.round(result * 10) / 10;
+}
+
 /** Today → now(); past date → local noon of that date. */
 export function buildLoggedAt(selectedDate: string): string {
   const today = todayStr();

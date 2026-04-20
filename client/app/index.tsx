@@ -4,7 +4,7 @@ import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/dat
 import { router, useFocusEffect } from 'expo-router';
 import { supabase } from '../lib/supabase';
 import { foodLogsWithMacros } from '../lib/queries';
-import { todayStr } from '../lib/body-metrics-helpers';
+import { todayStr, calcNavyBodyFat } from '../lib/body-metrics-helpers';
 import { Session } from '@supabase/supabase-js';
 
 // --- Types ---
@@ -182,6 +182,12 @@ export default function Index() {
     }
   }
 
+  const navyBf = calcNavyBodyFat(
+    bodyMetrics?.neck_cm ?? null,
+    bodyMetrics?.waist_cm ?? null,
+    heightM
+  );
+
   return (
     <ScrollView>
       <View style={{ padding: 20, gap: 12 }}>
@@ -254,7 +260,8 @@ export default function Index() {
                       : '-'}
                   </Text>
                   <Text style={{ fontSize: 12, color: '#555' }}>
-                    Neck: {bodyMetrics.neck_cm != null ? `${bodyMetrics.neck_cm} cm` : '-'}
+                    Navy BF: {navyBf != null ? `${navyBf}%` : '-'}
+                    {' | '}Neck: {bodyMetrics.neck_cm != null ? `${bodyMetrics.neck_cm} cm` : '-'}
                     {' | '}Waist: {bodyMetrics.waist_cm != null ? `${bodyMetrics.waist_cm} cm` : '-'}
                     {' | '}Forearm: {bodyMetrics.forearm_cm != null ? `${bodyMetrics.forearm_cm} cm` : '-'}
                   </Text>
@@ -263,7 +270,7 @@ export default function Index() {
                 <View style={{ backgroundColor: '#f5f5f5', padding: 12, borderRadius: 4, marginBottom: 12 }}>
                   <Text style={{ fontWeight: 'bold', marginBottom: 4 }}>Body Metrics</Text>
                   <Text>Weight: - | Body fat: - | BMI: -</Text>
-                  <Text style={{ fontSize: 12, color: '#555' }}>Neck: - | Waist: - | Forearm: -</Text>
+                  <Text style={{ fontSize: 12, color: '#555' }}>Navy BF: {navyBf != null ? `${navyBf}%` : '-'} | Neck: - | Waist: - | Forearm: -</Text>
                 </View>
                 )}
 
