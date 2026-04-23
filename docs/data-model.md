@@ -363,7 +363,7 @@ order by bm.logged_at;
 **Decisions:**
 - All columns except `user_id`, `logged_at`, and `created_at` are nullable — a check-in with partial data is valid. User logs what they have.
 - BMI is not stored — it is derived from `weight_kg` and `height_m` (stored on `profiles`) at query time. Storing it would create two sources of truth.
-- `body_fat_pct` is entered manually — user reads it from a smart scale or measurement tool. Calculation from circumferences is a future feature and does not belong in the data model.
+- `body_fat_pct` is entered manually — user reads it from a smart scale or measurement tool. Navy body fat % is a derived display value computed client-side from `neck_cm`, `waist_cm`, and `profiles.height_m` (male formula only). It is not stored — same pattern as BMI.
 - Circumferences (`neck_cm`, `waist_cm`, `forearm_cm`) are present but low priority — nullable, no pressure to fill. Forearm is intentional: included for personal tracking use cases beyond standard body fat formulas (e.g. monitoring muscle gain in a specific area). It does not map to the US Navy body fat estimation method, which uses neck and waist only.
 - Entries are editable — users can correct input errors (wrong weight, wrong date). `updated_at` tracks modifications. This matches the `food_logs` pattern. Historical trend analysis uses `logged_at`, not `created_at` or `updated_at`.
 - `logged_at` is client-owned, same pattern as `food_logs`. No past limit, no future timestamps.
