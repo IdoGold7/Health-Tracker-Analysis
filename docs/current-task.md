@@ -1,131 +1,106 @@
 # Current Task
 
 ## Objective
-Display Navy body fat % estimate on the Home screen body metrics block,
-computed from existing data (`neck_cm`, `waist_cm` from `body_metrics`,
-`height_m` from `profiles`). Shown alongside the manual `body_fat_pct`
-value — not replacing it.
+Build the Settings screen. Users set height, calorie target, and
+target weight. The app computes protein/carbs/fat targets from a
+formula and persists all values to `profiles`. Move the height input
+from the body metrics entry screen to Settings.
 
 ## Docs to Read
-- `docs/data-model.md` — `body_metrics` columns, `profiles.height_m`
+- `docs/data-model.md` — `profiles` columns, `body_metrics.weight_kg`
 
 ## Context
-Circumference columns (`neck_cm`, `waist_cm`) were added to
-`body_metrics` specifically to support this calculation. The data is
-already being collected. This task adds the display-only computation.
+All columns already exist on `profiles`: `height_m`, `target_kcal`,
+`target_weight_kg`, `target_protein_g`, `target_carbs_g`,
+`target_fat_g`. No migration needed.
 
-The US Navy body fat formula (male) is:
+Height is currently entered on the body metrics entry screen and
+saved to `profiles.height_m`. This task moves that input to Settings
+and removes it from body metrics entry. The data destination
+(`profiles.height_m`) does not change — BMI and Navy BF continue
+reading from the same column.
+
+**Macro target formula (single formula, no presets):**
 
 ```
-body_fat_% = 86.010 × log10(waist_cm - neck_cm) - 70.041 × log10(height_cm) + 36.76
+protein_g = 2 × weight_kg
+protein_kcal = protein_g × 4
+remaining_kcal = target_kcal - protein_kcal
+carbs_g = remaining_kcal × (2/3) / 4
+fat_g = remaining_kcal × (1/3) / 9
 ```
 
-Where `height_cm = height_m × 100`.
+**Weight source for formula:**
+- Primary: `profiles.target_weight_kg` (user-set goal weight)
+- Fallback: latest `body_metrics.weight_kg` (most recent weigh-in)
+- Neither exists → protein/carbs/fat cannot be computed, show dashes
 
-This follows the same non-persisted derived-metric pattern as BMI, but
-the calculation happens locally in the app via a helper function, not
-in the database query. No query changes, no schema changes.
+**Computed values are stored, not ephemeral.** When the user saves
+Settings, all six values (height_m, target_kcal, target_weight_kg,
+target_protein_g, target_carbs_g, target_fat_g) are written to
+`profiles`. Home screen reads stored values directly — no
+recomputation needed there. If weight changes later, user returns to
+Settings and saves again to recompute.
 
-Hardcoded to male formula — gender selection is out of scope
-(documented, intentional, portfolio project with single user).
+**Behavior rules:**
+
+- **Clearing a field = null.** If a user clears an input and saves,
+  that column is written as `null` to `profiles`. Not `0`, not "keep
+  old value." This applies to all six fields.
+- **Input precision must match DB constraints.**
+  `target_kcal` is `integer` — UI accepts whole numbers only. If the
+  user enters a decimal, round to nearest integer on save.
+  `height_m` is `numeric(4,2)` — max two decimal places.
+  `target_weight_kg` is `numeric(5,2)` — max two decimal places.
+  Truncate or round extra decimals on save, not while typing.
+- **Save button is always enabled** unless a save request is currently
+  in flight. Partial data is valid (height only, kcal only, etc.).
+  The user can save at any time — the helper handles missing values
+  by returning null for computed fields.
+- **Invalid typing states don't crash recomputation.** While the user
+  is mid-keystroke (e.g. field is empty or contains only "."), the
+  computed display shows dashes. The helper receives null for
+  unparseable input.
+
+---
 
 ## In Scope
-
-### Checkpoint 1 — Helper Function
-Add to `client/lib/body-metrics-helpers.ts`:
-
-```typescript
-/**
- * US Navy body fat % estimate (male formula).
- * Returns null if any input is missing or invalid.
- */
-export function calcNavyBodyFat(
-  neck_cm: number | null,
-  waist_cm: number | null,
-  height_m: number | null
-): number | null
-```
-
-Rules:
-- If any of the three inputs is `null`, return `null`
-- If `height_m <= 0` or `neck_cm <= 0` or `waist_cm <= 0`, return
-  `null`
-- If `waist_cm <= neck_cm`, return `null` (formula produces
-  nonsensical output — log of zero or negative)
-- Convert `height_m` to cm: `height_m × 100`
-- Apply formula: `86.010 × log10(waist - neck) - 70.041 × log10(height_cm) + 36.76`
-- Return a `number | null`, already rounded to one decimal place.
-  The UI renders the returned number directly and must not apply
-  additional rounding or formatting logic.
-- If the computed result is not finite (`NaN`, `Infinity`, `-Infinity`),
-  return `null`
-- Pure function, no side effects, no Supabase calls
-
-**Verification:** Developer runs the function mentally or in a
-scratch file with known values:
-- neck=38, waist=85, height=1.78 → expected ≈ 18.6%
-- neck=null → returns null
-- waist=30, neck=35 (waist < neck) → returns null
-- height=0 → returns null
-- neck=0 → returns null
-
-### Checkpoint 2 — Home Screen Display
-Update the body metrics block in `client/app/index.tsx`.
-
-**Data available:** `bodyMetrics` already has `neck_cm`, `waist_cm`,
-`body_fat_pct`. `heightM` is already fetched from `profiles`.
-
-**Compute once before render:** Call `calcNavyBodyFat` once with
-`bodyMetrics?.neck_cm`, `bodyMetrics?.waist_cm`, `heightM` and store
-the result. Use the same derived value in both tappable and
-non-tappable render variants. Do not duplicate calculation logic
-inline across branches.
-
-**Display change:** Add Navy estimate to the body metrics summary.
-Current display has:
-```
-Weight: X kg | Body fat: X% | BMI: X
-Neck: X cm | Waist: X cm | Forearm: X cm
-```
-
-New display:
-```
-Weight: X kg | Body fat: X% | BMI: X
-Navy BF: X% | Neck: X cm | Waist: X cm | Forearm: X cm
-```
-
-Rules:
-- If result is `null`, show `Navy BF: -`
-- If result is a number, show `Navy BF: X%` using the returned value
-  directly (no additional rounding)
-- Import `calcNavyBodyFat` from helpers
-- Non-tappable variant: `Navy BF: -` (same as other missing values)
-
-**No changes to:**
-- Body metrics entry screen
-- Body metrics detail screen
-- Any database queries or schema
-- The manual `body_fat_pct` field or display
-
-**Developer verifies on device:**
-- Entry with neck=38, waist=85, height=1.78 → Navy BF shows ≈ 18.6%
-- Entry with only weight (no neck or waist) → Navy BF shows `-`
-- Entry with neck and waist but no height set in profiles → Navy BF
-  shows `-`
-- No data for selected date → entire block shows dashes including
-  Navy BF
-- Manual body fat % still displays independently alongside Navy BF
+*(all checkpoints complete — see Completed section below)*
 
 ## Out of Scope
-- Female formula / gender selection
-- Storing Navy BF in the database
-- Showing Navy BF on detail or entry screens
-- Forearm in the formula (Navy method uses neck + waist only)
-- Any changes to body metrics entry or detail screens
+- Progress bars on Home screen (separate task)
+- Multiple formula presets (high protein, weight loss, etc.)
+- Auto-recalculation when new body_metrics weight is logged
 - Any schema or migration changes
+- UI/UX styling pass
+- Dashboard integration
+- Any changes to body metrics detail screen
 
 ## Flagged
-- Nothing currently.
+- README still says "Append-only body metrics. No UPDATE or DELETE"
+  under Data Design Decisions — this is stale. Should be updated on
+  next README pass.
 
 ## Completed
-*(empty — work has not started)*
+
+### Checkpoint 1 — Helper Function
+Added `calcMacroTargets(target_kcal, weight_kg)` in
+`client/lib/macro-target-helpers.ts`. Pure function, null-returning
+on invalid/missing inputs or contradictory kcal/protein. Verified
+against all cases in spec (case 2 expected values were corrected
+mid-task: protein=150, carbs=233, fat=52).
+
+### Checkpoint 2 — Settings Screen
+Added `client/app/settings.tsx`. Loads profile + latest
+`body_metrics.weight_kg`, edits height/kcal/target weight, live-
+computes macros with weight-source indicator, saves all six
+`profiles` columns (computed macros written as null when formula
+cannot run). Save button disabled only while in flight. No
+navigation on success. Added "Settings" button to Home.
+
+### Checkpoint 3 — Remove Height from Body Metrics Entry
+Removed height input, state, profile fetch, and the profile-update
+step from `client/app/body-metrics.tsx`. Validation and save logic
+cleaned up — no dead code. Height reads on Home (BMI, Navy BF)
+continue to use `profiles.height_m`; body metrics detail screen
+untouched; existing height values preserved.

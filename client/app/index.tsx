@@ -218,6 +218,7 @@ export default function Index() {
         {session && <Button title="Go to Library" onPress={() => router.push('/library')} />}
         {session && <Button title="Log Food" onPress={() => router.push('/log-food')} />}
         {session && <Button title="Body Metrics" onPress={() => router.push(`/body-metrics?date=${selectedDate}`)} />}
+        {session && <Button title="Settings" onPress={() => router.push('/settings')} />}
         {session && <Button title="Sign Out" onPress={() => supabase.auth.signOut()} />}
 
         {/* Daily macro display */}
