@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -10,7 +10,7 @@ import {
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { router, useLocalSearchParams } from 'expo-router';
 import { supabase } from '../lib/supabase';
-import { todayStr, parsePositive, parseBodyFat, buildLoggedAt } from '../lib/body-metrics-helpers';
+import { todayStr, parsePositive, parseBodyFat, buildLoggedAt, fetchLatestBodyMetricsAsOf } from '../lib/body-metrics-helpers';
 
 // --- Component ---
 
@@ -35,6 +35,24 @@ export default function BodyMetrics() {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitSuccess, setSubmitSuccess] = useState<string | null>(null);
+
+  // Pre-fill inputs with the latest prior entry on or before the selected date
+  useEffect(() => {
+    (async () => {
+      try {
+        const latest = await fetchLatestBodyMetricsAsOf(selectedDate);
+        if (!latest) return;
+        if (latest.weight_kg != null) setWeightKg(String(latest.weight_kg));
+        if (latest.body_fat_pct != null) setBodyFatPct(String(latest.body_fat_pct));
+        if (latest.neck_cm != null) setNeckCm(String(latest.neck_cm));
+        if (latest.waist_cm != null) setWaistCm(String(latest.waist_cm));
+        if (latest.forearm_cm != null) setForearmCm(String(latest.forearm_cm));
+      } catch (err) {
+        console.error('Failed to pre-fill body metrics:', err);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // --- Validation ---
 

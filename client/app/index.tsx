@@ -4,7 +4,7 @@ import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/dat
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { supabase } from '../lib/supabase';
 import { foodLogsWithMacros } from '../lib/queries';
-import { todayStr, calcNavyBodyFat } from '../lib/body-metrics-helpers';
+import { todayStr, calcNavyBodyFat, fetchLatestBodyMetricsAsOf, BodyMetricsSummary, localDateStr } from '../lib/body-metrics-helpers';
 import { Session } from '@supabase/supabase-js';
 
 // --- Types ---
@@ -18,15 +18,6 @@ type DailyLogEntry = {
   protein_g: number;
   carbs_g: number;
   fat_g: number;
-};
-
-type BodyMetricsSummary = {
-  id: string;
-  weight_kg: number | null;
-  body_fat_pct: number | null;
-  neck_cm: number | null;
-  waist_cm: number | null;
-  forearm_cm: number | null;
 };
 
 type MacroTargets = {
@@ -81,32 +72,6 @@ function MacroRow({ label, intake, target, unit }: {
       )}
     </View>
   );
-}
-
-async function fetchLatestBodyMetrics(dateStr: string): Promise<BodyMetricsSummary | null> {
-  const { start, end } = getLocalDayBounds(dateStr);
-
-  const { data, error } = await supabase
-    .from('body_metrics')
-    .select('id, weight_kg, body_fat_pct, neck_cm, waist_cm, forearm_cm')
-    .gte('logged_at', start)
-    .lt('logged_at', end)
-    .order('logged_at', { ascending: false })
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (error) throw error;
-  if (!data) return null;
-
-  return {
-    id: data.id,
-    weight_kg: data.weight_kg != null ? Number(data.weight_kg) : null,
-    body_fat_pct: data.body_fat_pct != null ? Number(data.body_fat_pct) : null,
-    neck_cm: data.neck_cm != null ? Number(data.neck_cm) : null,
-    waist_cm: data.waist_cm != null ? Number(data.waist_cm) : null,
-    forearm_cm: data.forearm_cm != null ? Number(data.forearm_cm) : null,
-  };
 }
 
 async function fetchProfile(): Promise<ProfileData | null> {
@@ -201,7 +166,7 @@ export default function Index() {
     try {
       const [data, metrics, profile] = await Promise.all([
         fetchDailyLogs(selectedDate),
-        fetchLatestBodyMetrics(selectedDate),
+        fetchLatestBodyMetricsAsOf(selectedDate),
         fetchProfile(),
       ]);
       setEntries(data);
@@ -275,6 +240,11 @@ export default function Index() {
     (targets?.target_fat_g ?? 0) > 0;
   const showWeightMessage = kcalTargetSet && !anyMacroTargetSet;
 
+  const bodyMetricsFromLabel =
+    bodyMetrics != null && localDateStr(bodyMetrics.logged_at) !== selectedDate
+      ? ` (from ${new Date(bodyMetrics.logged_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })})`
+      : '';
+
   return (
     <ScrollView>
       <View style={{ padding: 20, gap: 12 }}>
@@ -339,7 +309,7 @@ export default function Index() {
                   onPress={() => router.push(`/body-metrics-detail?id=${bodyMetrics.id}`)}
                   style={{ backgroundColor: '#f5f5f5', padding: 12, borderRadius: 4, marginBottom: 12 }}
                 >
-                  <Text style={{ fontWeight: 'bold', marginBottom: 4 }}>Body Metrics</Text>
+                  <Text style={{ fontWeight: 'bold', marginBottom: 4 }}>Body Metrics{bodyMetricsFromLabel}</Text>
                   <Text>
                     Weight: {bodyMetrics.weight_kg != null ? `${bodyMetrics.weight_kg} kg` : '-'}
                     {' | '}Body fat: {bodyMetrics.body_fat_pct != null ? `${bodyMetrics.body_fat_pct}%` : '-'}
