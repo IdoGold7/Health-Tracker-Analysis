@@ -29,6 +29,18 @@ type BodyMetricsSummary = {
   forearm_cm: number | null;
 };
 
+type MacroTargets = {
+  target_kcal: number | null;
+  target_protein_g: number | null;
+  target_carbs_g: number | null;
+  target_fat_g: number | null;
+};
+
+type ProfileData = {
+  height_m: number | null;
+  targets: MacroTargets;
+};
+
 // --- Query ---
 
 function getLocalDayBounds(dateStr: string): { start: string; end: string } {
@@ -36,6 +48,39 @@ function getLocalDayBounds(dateStr: string): { start: string; end: string } {
   const next = new Date(start);
   next.setDate(next.getDate() + 1);
   return { start: start.toISOString(), end: next.toISOString() };
+}
+
+function MacroRow({ label, intake, target, unit }: {
+  label: string;
+  intake: number;
+  target: number | null;
+  unit: string;
+}) {
+  const hasTarget = target != null && target > 0;
+  const intakeStr =
+    unit === '' ? String(Math.round(intake)) : `${Math.round(intake * 10) / 10}${unit}`;
+  const targetStr = hasTarget ? `/ ${target}${unit}` : '/ -';
+  const over = hasTarget && intake > (target as number);
+  const fillPct = hasTarget ? Math.min(intake / (target as number), 1) * 100 : 0;
+
+  return (
+    <View style={{ marginBottom: 8 }}>
+      <Text style={{ fontSize: 13, marginBottom: 2 }}>
+        {label}: {intakeStr} {targetStr}
+      </Text>
+      {hasTarget && (
+        <View style={{ height: 8, backgroundColor: '#ddd', borderRadius: 4, overflow: 'hidden' }}>
+          <View
+            style={{
+              width: `${fillPct}%`,
+              height: '100%',
+              backgroundColor: over ? '#e74c3c' : '#2196F3',
+            }}
+          />
+        </View>
+      )}
+    </View>
+  );
 }
 
 async function fetchLatestBodyMetrics(dateStr: string): Promise<BodyMetricsSummary | null> {
@@ -64,18 +109,26 @@ async function fetchLatestBodyMetrics(dateStr: string): Promise<BodyMetricsSumma
   };
 }
 
-async function fetchProfileHeight(): Promise<number | null> {
+async function fetchProfile(): Promise<ProfileData | null> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return null;
 
   const { data, error } = await supabase
     .from('profiles')
-    .select('height_m')
+    .select('height_m, target_kcal, target_protein_g, target_carbs_g, target_fat_g')
     .eq('id', user.id)
     .single();
 
   if (error) throw error;
-  return data.height_m != null ? Number(data.height_m) : null;
+  return {
+    height_m: data.height_m != null ? Number(data.height_m) : null,
+    targets: {
+      target_kcal: data.target_kcal != null ? Number(data.target_kcal) : null,
+      target_protein_g: data.target_protein_g != null ? Number(data.target_protein_g) : null,
+      target_carbs_g: data.target_carbs_g != null ? Number(data.target_carbs_g) : null,
+      target_fat_g: data.target_fat_g != null ? Number(data.target_fat_g) : null,
+    },
+  };
 }
 
 async function fetchDailyLogs(dateStr: string): Promise<DailyLogEntry[]> {
@@ -123,6 +176,7 @@ export default function Index() {
   const [showPicker, setShowPicker] = useState(false);
   const [bodyMetrics, setBodyMetrics] = useState<BodyMetricsSummary | null>(null);
   const [heightM, setHeightM] = useState<number | null>(null);
+  const [targets, setTargets] = useState<MacroTargets | null>(null);
 
   useEffect(() => {
     // Restore session from AsyncStorage on mount
@@ -145,20 +199,22 @@ export default function Index() {
     setEntries([]);
     setBodyMetrics(null);
     try {
-      const [data, metrics, height] = await Promise.all([
+      const [data, metrics, profile] = await Promise.all([
         fetchDailyLogs(selectedDate),
         fetchLatestBodyMetrics(selectedDate),
-        fetchProfileHeight(),
+        fetchProfile(),
       ]);
       setEntries(data);
       setBodyMetrics(metrics);
-      setHeightM(height);
+      setHeightM(profile?.height_m ?? null);
+      setTargets(profile?.targets ?? null);
     } catch (err: any) {
       console.error('Failed to fetch daily logs:', err);
       setLogError(err.message ?? 'Failed to load logs.');
       setEntries([]);
       setBodyMetrics(null);
       setHeightM(null);
+      setTargets(null);
     }
     setLoadingLogs(false);
   }, [session, selectedDate]);
@@ -194,6 +250,30 @@ export default function Index() {
     bodyMetrics?.waist_cm ?? null,
     heightM
   );
+
+  const totals = entries.reduce(
+    (acc, e) => ({
+      kcal: acc.kcal + e.kcal,
+      protein_g: acc.protein_g + e.protein_g,
+      carbs_g: acc.carbs_g + e.carbs_g,
+      fat_g: acc.fat_g + e.fat_g,
+    }),
+    { kcal: 0, protein_g: 0, carbs_g: 0, fat_g: 0 }
+  );
+
+  const macroRows: { label: string; intake: number; target: number | null; unit: string }[] = [
+    { label: 'Kcal', intake: totals.kcal, target: targets?.target_kcal ?? null, unit: '' },
+    { label: 'Protein', intake: totals.protein_g, target: targets?.target_protein_g ?? null, unit: 'g' },
+    { label: 'Carbs', intake: totals.carbs_g, target: targets?.target_carbs_g ?? null, unit: 'g' },
+    { label: 'Fat', intake: totals.fat_g, target: targets?.target_fat_g ?? null, unit: 'g' },
+  ];
+
+  const kcalTargetSet = (targets?.target_kcal ?? 0) > 0;
+  const anyMacroTargetSet =
+    (targets?.target_protein_g ?? 0) > 0 ||
+    (targets?.target_carbs_g ?? 0) > 0 ||
+    (targets?.target_fat_g ?? 0) > 0;
+  const showWeightMessage = kcalTargetSet && !anyMacroTargetSet;
 
   return (
     <ScrollView>
@@ -282,15 +362,17 @@ export default function Index() {
                 </View>
                 )}
 
-                {/* Totals */}
+                {/* Totals with progress bars */}
                 <View style={{ backgroundColor: '#f5f5f5', padding: 12, borderRadius: 4, marginBottom: 12 }}>
-                  <Text style={{ fontWeight: 'bold', marginBottom: 4 }}>Totals</Text>
-                  <Text>
-                    {Math.round(entries.reduce((s, e) => s + e.kcal, 0))} kcal
-                    {' | '}P {Math.round(entries.reduce((s, e) => s + e.protein_g, 0) * 10) / 10}g
-                    {' | '}C {Math.round(entries.reduce((s, e) => s + e.carbs_g, 0) * 10) / 10}g
-                    {' | '}F {Math.round(entries.reduce((s, e) => s + e.fat_g, 0) * 10) / 10}g
-                  </Text>
+                  <Text style={{ fontWeight: 'bold', marginBottom: 8 }}>Totals</Text>
+                  {macroRows.map((r) => (
+                    <MacroRow key={r.label} {...r} />
+                  ))}
+                  {showWeightMessage && (
+                    <Text style={{ color: '#888', fontSize: 12, marginTop: 4 }}>
+                      Set your weight to compute macro targets
+                    </Text>
+                  )}
                 </View>
 
                 {/* Entry list */}
