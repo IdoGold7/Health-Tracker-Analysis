@@ -129,3 +129,27 @@ export async function getDashboardBodyMetrics(
     return [];
   }
 }
+
+export async function getLatestWeight(
+  supabase: SupabaseClient
+): Promise<number | null> {
+  try {
+    const { data, error } = await supabase
+      .from('body_metrics')
+      .select('weight_kg')
+      .not('weight_kg', 'is', null)
+      .order('logged_at', { ascending: false })
+      .limit(1)
+      .single();
+
+    if (error) {
+      if (error.code === 'PGRST116') return null;
+      console.error('getLatestWeight error:', error);
+      return null;
+    }
+    return data?.weight_kg != null ? Number(data.weight_kg) : null;
+  } catch (e) {
+    console.error('getLatestWeight exception:', e);
+    return null;
+  }
+}
